@@ -36,7 +36,7 @@ const CORE_CONFIG_STORAGE_KEY = 'spenta_core_layer_configs_v1';
 const CORE_AUDIT_STORAGE_KEY = 'spenta_core_audit_log_v1';
 const DEPLOYMENT_TARGET_STORAGE_KEY = 'spenta_deployment_target_v1';
 const MOBILE_GRID_STORAGE_KEY = 'spenta_mobile_grid_v1';
-const NEURAL_CORE_STORAGE_KEY = 'spenta_neural_core_v1';
+const NEURAL_CORE_STORAGE_KEY = 'spenta_neural_core_v2';
 const ACTIVE_TAB_STORAGE_KEY = 'spenta_active_tab_v1';
 const DEFAULT_SELECTED_IDS = ['icr_ops', 'genai_bi', 'mis_erp', 'cyber_sla'];
 
@@ -83,7 +83,7 @@ export interface NeuralCoreState {
 }
 
 export const DEFAULT_NEURAL_CORE_STATE: NeuralCoreState = {
-  activeSystem: 'spiral-galaxy',
+  activeSystem: 'solar-map',
   solarTimeScale: 1.0,
   galaxyRotationSpeed: 0.85,
   galaxyPreset: 'andromeda-spiral',
@@ -575,7 +575,7 @@ function loadStoredNeuralCoreState(): NeuralCoreState {
     if (!raw) return DEFAULT_NEURAL_CORE_STATE;
     const parsed = JSON.parse(raw) as Partial<NeuralCoreState>;
     const activeSystem: NeuralCoreSystem =
-      parsed.activeSystem === 'solar-map' ? 'solar-map' : 'spiral-galaxy';
+      parsed.activeSystem === 'spiral-galaxy' ? 'spiral-galaxy' : 'solar-map';
     const galaxyPreset: NeuralGalaxyPresetId =
       parsed.galaxyPreset === 'elliptical-dense' ||
       parsed.galaxyPreset === 'active-starburst' ||

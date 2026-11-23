@@ -415,10 +415,10 @@ export function GlobalSearchBar() {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:w-[92vw] sm:max-w-3xl lg:max-w-4xl bg-[#FAF8F4] dark:bg-[#141A32] text-[#16213A] dark:text-[#E7EBF5] rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] shadow-2xl overflow-hidden"
+        className="w-[92vw] sm:w-[76vw] md:w-[68vw] lg:w-[58vw] xl:w-[54vw] min-w-[50vw] bg-[#FAF8F4] dark:bg-[#141A32] text-[#16213A] dark:text-[#E7EBF5] rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] shadow-2xl overflow-hidden"
       >
         {/* Search Input Row */}
-        <div className="flex items-center gap-3 px-4 sm:px-5 py-3.5 bg-white dark:bg-[#0F1529] border-b border-[#E4DFD6] dark:border-[#232B4A]">
+        <div className="w-full flex items-center gap-3 px-4 sm:px-5 py-3.5 bg-white dark:bg-[#0F1529] border-b border-[#E4DFD6] dark:border-[#232B4A]">
           <Search className="w-4 h-4 text-[#5F6576] dark:text-[#8E96B0] shrink-0" strokeWidth={1.5} />
           <input
             ref={inputRef}
@@ -428,7 +428,7 @@ export function GlobalSearchBar() {
             onKeyDown={handleKeyDown}
             placeholder="Jump to tabs, search 13 modules, apply stack recipes, inspect L1–L6..."
             aria-label="Command Palette Search"
-            className="flex-1 min-w-0 bg-transparent text-sm text-[#16213A] dark:text-[#E7EBF5] placeholder:text-[#7B8294] dark:placeholder:text-[#8E96B0] focus:outline-none"
+            className="w-full flex-1 min-w-0 bg-transparent text-sm text-[#16213A] dark:text-[#E7EBF5] placeholder:text-[#7B8294] dark:placeholder:text-[#8E96B0] focus:outline-none"
           />
           {query && (
             <button

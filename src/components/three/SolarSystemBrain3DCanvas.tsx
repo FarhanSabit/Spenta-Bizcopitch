@@ -1567,7 +1567,9 @@ export default function SolarSystemBrain3DCanvas({
     [],
   );
 
-  const [focusedBodyId, setFocusedBodyId] = useState<string>(selectedHubId ?? 'sun');
+  const [focusedBodyId, setFocusedBodyId] = useState<string>(
+    selectedHubId && hubFocusNonce > 0 ? selectedHubId : 'sun',
+  );
   const [lastSelectedPlanetId, setLastSelectedPlanetId] = useState<string>(
     selectedHubId && selectedHubId !== 'sun' ? selectedHubId : 'enterprise',
   );
