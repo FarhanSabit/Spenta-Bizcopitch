@@ -502,7 +502,7 @@ export function FinancialsView() {
     const csvLines = [headers, ...rows]
       .map((cols) => cols.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
       .join('\n');
-    const blob = new Blob([csvLines], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([`\uFEFF${csvLines}`], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -709,6 +709,15 @@ export function FinancialsView() {
               </button>
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={handleExportFiveYearCsv}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 sm:py-2 rounded-xl border border-[#1C6E46]/40 dark:border-[#6FCB9F]/40 bg-[#1C6E46]/10 dark:bg-[#6FCB9F]/15 text-[#1C6E46] dark:text-[#6FCB9F] hover:bg-[#1C6E46]/20 text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            {csvExported ? <Check className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
+            <span>{csvExported ? 'CSV Exported' : 'Export 5Y CSV'}</span>
+          </button>
 
           <button
             type="button"

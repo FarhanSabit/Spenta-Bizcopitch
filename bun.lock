@@ -9,6 +9,7 @@
         "@fontsource/plus-jakarta-sans": "^5.3.0",
         "@google/genai": "^3.6.1",
         "@types/three": "^0.187.0",
+        "clsx": "^2.1.1",
         "express": "^5.1.0",
         "framer-motion": "^14.14.0",
         "gsap": "^3.15.1",
@@ -17,6 +18,7 @@
         "react": "^19.1.0",
         "react-dom": "^19.1.0",
         "recharts": "^3.11.0",
+        "tailwind-merge": "^3.7.1",
         "three": "^0.187.0",
       },
       "devDependencies": {
@@ -671,6 +673,8 @@
     "statuses": ["statuses@2.0.2", "", {}, "sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw=="],
 
     "svg-pathdata": ["svg-pathdata@6.0.3", "", {}, "sha512-qsjeeq5YjBZ5eMdFuUa4ZosMLxgr5RZ+F+Y1OrDhuOCEInRMA3x74XdBtggJcj9kOeInz0WE+LgCPDkZFlBYJw=="],
+
+    "tailwind-merge": ["tailwind-merge@3.7.1", "", {}, "sha512-v7y4BV4FUlO8exj/4M5UXKeoowDiuugVUg3tkMNIyOUCOHy5xp8+5aWQeXCtZ2491sUV1YPsVeM9EveZ6/xuZQ=="],
 
     "tailwindcss": ["tailwindcss@4.3.5", "", {}, "sha512-FcQk9BuffmEHJP2G0XmB2SplU1aLTI7j07Kunk+U74Ny+XiWOtzXz9aujFZ/avntw1e2cOv/3PkgzflQ7gX2vQ=="],
 
