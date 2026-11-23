@@ -4,8 +4,8 @@ import { parseShareThemeParam } from '../utils/shareUrlCodec';
 export type ThemeMode = 'light' | 'dark';
 export type PaletteMode = 'stone' | 'nocturnal';
 
-const PALETTE_STORAGE_KEY = 'spenta_theme_palette_v1';
-const LEGACY_THEME_STORAGE_KEY = 'spenta_theme_v1';
+const PALETTE_STORAGE_KEY = 'spenta_theme_palette_v2';
+const LEGACY_THEME_STORAGE_KEY = 'spenta_theme_v2';
 
 interface ThemeContextValue {
   /** 'light' corresponds to Stone; 'dark' corresponds to Nocturnal */
@@ -42,7 +42,7 @@ function loadInitialPalette(): PaletteMode {
   } catch {
     // ignore storage access errors
   }
-  return 'nocturnal';
+  return 'stone';
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {

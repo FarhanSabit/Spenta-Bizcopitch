@@ -1474,7 +1474,7 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     setDeploymentTargetState('on-prem');
     setCoreLayerConfigs({ ...DEFAULT_CORE_LAYER_CONFIGS });
     setHitlConfidence(0.91);
-    setPaletteMode('nocturnal');
+    setPaletteMode('stone');
     setActiveBrainSelection((prev) => ({
       hubId: 'fintech',
       appId: 'icr_ops',

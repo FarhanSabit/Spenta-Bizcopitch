@@ -395,12 +395,18 @@ export function FinancialsView() {
     let cumEbitda = 0;
     let cumNet = 0;
 
-    return FINANCIAL_TRAJECTORY.map((row) => {
-      const revK = scenario === 'conservative' ? row.conservativeRevK : row.upsideRevK;
+    return FINANCIAL_TRAJECTORY.map((row, idx) => {
+      const growthFactor =
+        growthMode === 'aggressive'
+          ? Number(Math.pow(activeGrowthSpec.annualCompoundBase, idx).toFixed(3))
+          : 1.0;
+      const baseRevK = scenario === 'conservative' ? row.conservativeRevK : row.upsideRevK;
       const baseEbitdaK = scenario === 'conservative' ? row.conservativeEbitdaK : row.upsideEbitdaK;
-      const impliedOpexK = revK - baseEbitdaK;
+      const revK = Number((baseRevK * growthFactor).toFixed(1));
+      const scaledBaseEbitdaK = baseEbitdaK * growthFactor;
+      const impliedOpexK = revK - scaledBaseEbitdaK;
       const fxCostAdjustmentK = impliedOpexK * baseBdtBurnRatio * fxDeltaFactor;
-      const ebitdaK = Math.max(0, Number((baseEbitdaK - fxCostAdjustmentK).toFixed(1)));
+      const ebitdaK = Math.max(0, Number((scaledBaseEbitdaK - fxCostAdjustmentK).toFixed(1)));
       const netProfitK = Number((ebitdaK * (1 - taxRate / 100)).toFixed(1));
 
       cumEbitda += ebitdaK;
@@ -408,6 +414,7 @@ export function FinancialsView() {
 
       return {
         ...row,
+        growthFactor,
         revK,
         ebitdaK,
         netProfitK,
@@ -416,9 +423,9 @@ export function FinancialsView() {
         capitalEfficiencyMultiple: Number((cumNet / 500).toFixed(2)),
       };
     });
-  }, [scenario, fxRate, taxRate]);
+  }, [scenario, fxRate, taxRate, growthMode, activeGrowthSpec.annualCompoundBase]);
 
-  // 5-Year (FY2027-FY2031) 5-Scope Revenue Mix Modeler Projection Series (scaled by disciplined Growth Mode)
+  // 5-Year (FY2027-FY2031) 5-Scope Revenue Mix Modeler Projection Series (synced with Growth Mode)
   const fiveYearScopeSeries = useMemo(() => {
     const startTotalWeight =
       Object.values(DEFAULT_MIX_WEIGHTS.fy27).reduce((sum, val) => sum + val, 0) || 1;
@@ -428,11 +435,8 @@ export function FinancialsView() {
 
     return modeledSeries.map((row, idx) => {
       const progress = idx / yearCount;
-      const growthFactor =
-        growthMode === 'aggressive'
-          ? Number(Math.pow(activeGrowthSpec.annualCompoundBase, idx).toFixed(3))
-          : 1.0;
-      const scaledTotalRevK = Number((row.revK * growthFactor).toFixed(1));
+      const growthFactor = row.growthFactor;
+      const scaledTotalRevK = row.revK;
       let weightedGmPct = 0;
 
       const scopeRevK = {} as Record<RevenueScopeId, number>;
@@ -468,7 +472,7 @@ export function FinancialsView() {
         captive_ecosystem_pct: scopeSharePct.captive_ecosystem,
       };
     });
-  }, [modeledSeries, mixScopeWeights, growthMode, activeGrowthSpec.annualCompoundBase]);
+  }, [modeledSeries, mixScopeWeights]);
 
   const handleExportFiveYearCsv = () => {
     const headers = [
@@ -709,6 +713,37 @@ export function FinancialsView() {
               </button>
             </div>
           )}
+
+          <div
+            role="group"
+            aria-label="Growth Mode Scaling Toggle"
+            className="inline-flex rounded-xl bg-[#F2EFE9] dark:bg-[#0F1529] p-1 border border-[#E4DFD6] dark:border-[#232B4A]"
+          >
+            <button
+              type="button"
+              onClick={() => setGrowthMode('conservative')}
+              aria-pressed={growthMode === 'conservative'}
+              className={`px-3 py-2 sm:py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                growthMode === 'conservative'
+                  ? 'bg-[#1F3863] text-white dark:bg-[#8FA6E8] dark:text-[#0B1020]'
+                  : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+              }`}
+            >
+              Conservative (1.00×)
+            </button>
+            <button
+              type="button"
+              onClick={() => setGrowthMode('aggressive')}
+              aria-pressed={growthMode === 'aggressive'}
+              className={`px-3 py-2 sm:py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                growthMode === 'aggressive'
+                  ? 'bg-[#1C6E46] text-white dark:bg-[#6FCB9F] dark:text-[#0B1020]'
+                  : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+              }`}
+            >
+              Aggressive Growth (1.12×)
+            </button>
+          </div>
 
           <button
             type="button"

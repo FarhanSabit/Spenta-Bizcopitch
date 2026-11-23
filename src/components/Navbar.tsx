@@ -46,7 +46,7 @@ export function Navbar() {
         {/* Zone 2: 7 Clean Single-Line Navigation Tabs */}
         <nav
           aria-label="Primary portal navigation"
-          className="hidden lg:flex items-center gap-1 overflow-x-auto no-scrollbar"
+          className="hidden lg:flex items-center gap-0.5 xl:gap-1 overflow-x-auto no-scrollbar min-w-0"
         >
           {NAV_TABS.map((tab) => {
             const active = activeTab === tab;
@@ -55,7 +55,7 @@ export function Navbar() {
                 key={tab}
                 type="button"
                 onClick={() => handleSelectTab(tab)}
-                className={`relative whitespace-nowrap shrink-0 px-2.5 xl:px-3 py-1.5 rounded-md text-xs xl:text-[13px] font-medium transition-colors cursor-pointer ${
+                className={`relative whitespace-nowrap shrink-0 px-2 xl:px-2.5 py-1.5 rounded-md text-xs xl:text-[13px] font-medium transition-colors cursor-pointer ${
                   active
                     ? 'text-[#16213A] dark:text-[#E7EBF5] bg-[#F2EFE9] dark:bg-[#141A32]'
                     : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5] hover:bg-[#F2EFE9]/70 dark:hover:bg-[#141A32]/70'
@@ -63,7 +63,7 @@ export function Navbar() {
               >
                 {tab}
                 {active && (
-                  <span className="absolute inset-x-2.5 -bottom-[11px] h-[2px] bg-[#1F3863] dark:bg-[#8FA6E8] rounded-full" />
+                  <span className="absolute inset-x-2 -bottom-[11px] h-[2px] bg-[#1F3863] dark:bg-[#8FA6E8] rounded-full" />
                 )}
               </button>
             );
@@ -75,13 +75,17 @@ export function Navbar() {
           <button
             type="button"
             onClick={() => setCommandPaletteOpen(true)}
-            className="inline-flex items-center gap-2 h-9 sm:h-8 px-2.5 rounded-md bg-[#F2EFE9] dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] text-[#4A5163] dark:text-[#C8D0E4] text-xs transition-colors cursor-pointer whitespace-nowrap"
+            className="inline-flex items-center justify-between gap-2 h-9 sm:h-8 px-2.5 sm:px-3 sm:w-56 md:w-72 lg:w-48 xl:w-64 2xl:w-80 rounded-md bg-[#F2EFE9] dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] text-[#4A5163] dark:text-[#C8D0E4] text-xs transition-colors cursor-pointer whitespace-nowrap min-w-0"
             aria-label="Open Command Palette (Cmd+K)"
-            title="Command Palette (⌘K)"
+            title="Search apps, tabs, recipes, L1–L6… (⌘K)"
           >
-            <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
-            <span className="hidden xl:inline text-[#5F6576] dark:text-[#8E96B0]">Search…</span>
-            <kbd className="hidden sm:inline-block font-mono text-[10px] text-[#5F6576] dark:text-[#8E96B0] bg-white dark:bg-[#0B1020] border border-[#E4DFD6] dark:border-[#232B4A] px-1 py-0.5 rounded leading-none">
+            <span className="inline-flex items-center gap-2 min-w-0">
+              <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
+              <span className="hidden sm:inline truncate text-[#5F6576] dark:text-[#8E96B0]">
+                Search apps, tabs, L1–L6…
+              </span>
+            </span>
+            <kbd className="hidden sm:inline-block shrink-0 font-mono text-[10px] text-[#5F6576] dark:text-[#8E96B0] bg-white dark:bg-[#0B1020] border border-[#E4DFD6] dark:border-[#232B4A] px-1.5 py-0.5 rounded leading-none">
               ⌘K
             </kbd>
           </button>
