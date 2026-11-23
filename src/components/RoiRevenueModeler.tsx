@@ -5,6 +5,7 @@ import {
   SharedSearchBenchmarkState,
 } from './InteractiveRoiCalculator';
 import { RevenueMixModeler, SharedRevenueMixProps } from './RevenueMixModeler';
+import { GrowthMode } from '../data/spentaEnrichments';
 
 export type {
   BenchmarkVerifyPayload,
@@ -18,6 +19,8 @@ interface RoiRevenueModelerProps {
   sharedBenchmark?: SharedSearchBenchmarkState;
   onVerifyBenchmarks?: (payload: BenchmarkVerifyPayload) => Promise<void>;
   revenueMixProps?: SharedRevenueMixProps;
+  growthMode?: GrowthMode;
+  onChangeGrowthMode?: (mode: GrowthMode) => void;
 }
 
 export function RoiRevenueModeler({
@@ -25,6 +28,8 @@ export function RoiRevenueModeler({
   sharedBenchmark,
   onVerifyBenchmarks,
   revenueMixProps,
+  growthMode,
+  onChangeGrowthMode,
 }: RoiRevenueModelerProps) {
   return (
     <div className="space-y-6">
@@ -32,8 +37,10 @@ export function RoiRevenueModeler({
         initialAppId={initialAppId}
         sharedBenchmark={sharedBenchmark}
         onVerifyBenchmarks={onVerifyBenchmarks}
+        growthMode={growthMode}
+        onChangeGrowthMode={onChangeGrowthMode}
       />
-      <RevenueMixModeler {...revenueMixProps} />
+      <RevenueMixModeler {...revenueMixProps} growthMode={growthMode} />
     </div>
   );
 }

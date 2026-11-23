@@ -30,6 +30,14 @@ import NeuralCoreTelemetryOverlay, {
   INITIAL_TELEMETRY_SNAPSHOT,
   NeuralCoreTelemetrySnapshot,
 } from './NeuralCoreTelemetryOverlay';
+import {
+  OrbitalRingSummary,
+  SolarOrbitLogEntry,
+  SolarOrbitLogPanel,
+} from './SolarOrbitLogPanel';
+
+const SOLAR_ORBIT_LOG_STORAGE_KEY = 'spenta_solar_orbit_log_v1';
+const MAX_SOLAR_ORBIT_LOG_ENTRIES = 60;
 
 export interface SolarSystemBrain3DCanvasProps {
   compact?: boolean;
@@ -1537,6 +1545,7 @@ export default function SolarSystemBrain3DCanvas({
     setSolarShowResonance: setShowResonance,
     solarFollowPlanet: followPlanet,
     setSolarFollowPlanet: setFollowPlanet,
+    navigateToItem,
   } = useStack();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -1591,6 +1600,33 @@ export default function SolarSystemBrain3DCanvas({
   const [gravityWellAlert, setGravityWellAlert] = useState<GravityWellInterferenceAlert | null>(
     null,
   );
+  const [orbitLog, setOrbitLog] = useState<SolarOrbitLogEntry[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = window.localStorage.getItem(SOLAR_ORBIT_LOG_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.slice(0, MAX_SOLAR_ORBIT_LOG_ENTRIES) : [];
+    } catch {
+      return [];
+    }
+  });
+  const prevEffectiveVelMultRef = useRef<number>(
+    (stressTestActive ? liveStressVelocity : orbitalVelocity) * timeScale,
+  );
+  const prevVelContextRef = useRef<{
+    velocity: number;
+    timeScale: number;
+    preset: SolarConfigurationPreset;
+    stress: boolean;
+    paused: boolean;
+  }>({
+    velocity: orbitalVelocity,
+    timeScale,
+    preset: configurationPreset,
+    stress: stressTestActive,
+    paused: isPaused,
+  });
 
   const selectedIdsRef = useRef<string[]>(selectedIds);
   const hitlRef = useRef<number>(hitlConfidence);
@@ -1715,6 +1751,124 @@ export default function SolarSystemBrain3DCanvas({
   useEffect(() => {
     onSelectHubRef.current = onSelectHub;
   }, [onSelectHub]);
+
+  // Persist Historical Orbit Log to localStorage
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SOLAR_ORBIT_LOG_STORAGE_KEY,
+        JSON.stringify(orbitLog.slice(0, MAX_SOLAR_ORBIT_LOG_ENTRIES)),
+      );
+    } catch {
+      // Ignore storage quota errors in restricted iframe sandboxes
+    }
+  }, [orbitLog]);
+
+  // Debounced per-planet velocity change tracker for the persistent Historical Orbit Log
+  useEffect(() => {
+    const effectiveMult = isPaused
+      ? 0
+      : (stressTestActive ? liveStressVelocity : orbitalVelocity) * timeScale;
+    const prevMult = prevEffectiveVelMultRef.current;
+    const prevCtx = prevVelContextRef.current;
+
+    if (Math.abs(effectiveMult - prevMult) < 0.04) {
+      prevVelContextRef.current = {
+        velocity: orbitalVelocity,
+        timeScale,
+        preset: configurationPreset,
+        stress: stressTestActive,
+        paused: isPaused,
+      };
+      return;
+    }
+
+    const triggerParts: string[] = [];
+    if (prevCtx.paused !== isPaused) {
+      triggerParts.push(isPaused ? 'Simulation Paused' : 'Simulation Resumed');
+    }
+    if (prevCtx.stress !== stressTestActive) {
+      triggerParts.push(stressTestActive ? '10× Stress Surge' : 'Stress Surge Ended');
+    }
+    if (Math.abs(prevCtx.velocity - orbitalVelocity) >= 0.04) {
+      triggerParts.push(`Velocity ${orbitalVelocity.toFixed(2)}×`);
+    }
+    if (Math.abs(prevCtx.timeScale - timeScale) >= 0.04) {
+      triggerParts.push(`Time Scale ${timeScale.toFixed(1)}×`);
+    }
+    if (prevCtx.preset !== configurationPreset) {
+      triggerParts.push(`Preset: ${configurationPreset}`);
+    }
+    const triggerLabel = triggerParts.length > 0 ? triggerParts.join(' · ') : 'Orbital Shift';
+
+    const timer = window.setTimeout(() => {
+      const nowIso = new Date().toISOString();
+      const targetPlanets =
+        focusedBodyId !== 'sun'
+          ? PLANET_BLUEPRINTS.filter((bp) => bp.hubId === focusedBodyId)
+          : PLANET_BLUEPRINTS;
+
+      const newEntries: SolarOrbitLogEntry[] = targetPlanets.map((bp, idx) => {
+        const hub = BRAIN_HUBS.find((h) => h.id === bp.hubId);
+        return {
+          id: `${nowIso}-${bp.hubId}-${idx}`,
+          timestamp: nowIso,
+          hubId: bp.hubId,
+          planetName: hub ? `HUB ${hub.num} · ${hub.label}` : bp.celestialAnalog,
+          orbitColorToken: bp.orbitColorToken,
+          previousVelocityKmS: Number((bp.orbitalStats.meanVelocityKmS * prevMult).toFixed(2)),
+          newVelocityKmS: Number((bp.orbitalStats.meanVelocityKmS * effectiveMult).toFixed(2)),
+          velocityMultiplier: Number(effectiveMult.toFixed(2)),
+          trigger: triggerLabel,
+        };
+      });
+
+      setOrbitLog((prev) => [...newEntries, ...prev].slice(0, MAX_SOLAR_ORBIT_LOG_ENTRIES));
+      prevEffectiveVelMultRef.current = effectiveMult;
+      prevVelContextRef.current = {
+        velocity: orbitalVelocity,
+        timeScale,
+        preset: configurationPreset,
+        stress: stressTestActive,
+        paused: isPaused,
+      };
+    }, 280);
+
+    return () => window.clearTimeout(timer);
+  }, [orbitalVelocity, timeScale, configurationPreset, stressTestActive, liveStressVelocity, isPaused, focusedBodyId]);
+
+  const effectiveOrbitVelMultiplier = isPaused
+    ? 0
+    : (stressTestActive ? liveStressVelocity : orbitalVelocity) * timeScale;
+
+  const orbitalRings: OrbitalRingSummary[] = useMemo(
+    () =>
+      PLANET_BLUEPRINTS.map((bp, idx) => {
+        const hub = BRAIN_HUBS.find((h) => h.id === bp.hubId);
+        return {
+          hubId: bp.hubId,
+          planetName: hub ? `HUB ${hub.num} · ${hub.label}` : bp.celestialAnalog,
+          orbitColorToken: bp.orbitColorToken,
+          radiusPx: 11 + idx * 5.8,
+          effectiveVelocityKmS: bp.orbitalStats.meanVelocityKmS * effectiveOrbitVelMultiplier,
+        };
+      }),
+    [effectiveOrbitVelMultiplier],
+  );
+
+  const handleHoverHubFromPanel = (hubId: string | null) => {
+    hoveredHubRef.current = hubId;
+    setHoveredHubId(hubId);
+  };
+
+  const handleClearOrbitLog = () => {
+    setOrbitLog([]);
+    try {
+      window.localStorage.removeItem(SOLAR_ORBIT_LOG_STORAGE_KEY);
+    } catch {
+      // Ignore storage errors
+    }
+  };
 
   // Sync external hub selection (Pathway / Brain Architecture Profile -> Solar Map)
   useEffect(() => {
@@ -3535,25 +3689,26 @@ export default function SolarSystemBrain3DCanvas({
         const isHovered = hoveredId === pr.spec.hubId;
         const hasActiveMod = pr.moons.some((m) => selIds.includes(m.appId));
 
-        // Preserve each planet's unique Solar System CSS token color; brighten smoothly on focus/hover & 3D tilt
+        // Preserve each planet's unique Solar System CSS token color; brighten & softly pulse on hover
         const tiltClarityBoost = (orbitalInclinationRef.current / 45) * 0.1;
+        const hoverPulse = isHovered ? 0.5 + 0.5 * Math.sin(realTime * 4.2) : 0;
         _orbitColorScratch.copy(pr.orbitBaseColor);
         if (isFocused) {
           _orbitColorScratch.lerp(_orbitWhite, 0.28);
         } else if (isHovered) {
-          _orbitColorScratch.lerp(_orbitWhite, 0.16);
+          _orbitColorScratch.lerp(_orbitWhite, 0.14 + hoverPulse * 0.22);
         }
         pr.orbitMat.color.copy(_orbitColorScratch);
         pr.orbitMat.opacity = isFocused
           ? 0.86
           : isHovered
-            ? 0.68
+            ? 0.62 + hoverPulse * 0.32
             : hasActiveMod
               ? Math.min(0.58, 0.44 + tiltClarityBoost)
               : Math.min(0.48, 0.34 + tiltClarityBoost);
-        pr.selectRingMat.opacity = isFocused ? 0.85 : isHovered ? 0.55 : 0.0;
+        pr.selectRingMat.opacity = isFocused ? 0.85 : isHovered ? 0.46 + hoverPulse * 0.34 : 0.0;
         pr.selectRing.rotation.z = realTime * 0.6;
-        pr.atmoMat.opacity = isFocused ? 0.28 : hasActiveMod ? 0.2 : 0.12;
+        pr.atmoMat.opacity = isFocused ? 0.28 : isHovered ? 0.22 + hoverPulse * 0.1 : hasActiveMod ? 0.2 : 0.12;
 
         for (let m = 0; m < pr.moons.length; m++) {
           const moon = pr.moons[m];
@@ -4622,6 +4777,22 @@ export default function SolarSystemBrain3DCanvas({
           onCyclePlanet={handleCycleInspectedPlanet}
           onReturnToOverview={() => handleSelectView('ecliptic')}
         />
+      )}
+
+      {/* Interactive Orbital Path Hover Pulse Radar & Persistent Historical Orbit Log */}
+      {!compact && !inspectedBlueprint && (
+        <div className="pointer-events-none absolute top-[102px] left-3 z-10 hidden md:block">
+          <SolarOrbitLogPanel
+            entries={orbitLog}
+            onClearLog={handleClearOrbitLog}
+            rings={orbitalRings}
+            hoveredHubId={hoveredHubId}
+            selectedHubId={focusedBodyId}
+            onHoverHub={handleHoverHubFromPanel}
+            onSelectHub={handleFocusBodyChange}
+            onOpenShowreelVr={() => navigateToItem('Resources', { type: 'showreel', id: '18' })}
+          />
+        </div>
       )}
 
       {/* Unified 3D Neural Core Bottom Control Panel in Solar System Mode (.solar-map-scope CSS tokens) */}

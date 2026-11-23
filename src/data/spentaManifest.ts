@@ -1,5 +1,6 @@
-export const SPENTA_LOGO_URL =
-  'https://spenta.tech/wp-content/uploads/2025/11/Untitled-design-20.png';
+import spentaLogoAsset from '../assets/spenta-logo.svg';
+
+export const SPENTA_LOGO_URL = spentaLogoAsset;
 
 export const SPENTA_CONTACT_EMAIL = 'hello@spenta.tech';
 
@@ -164,7 +165,13 @@ export interface PitchSlide {
 export interface CaseStudy {
   id: string;
   client: string;
-  sector: 'Healthcare & Biopharma' | 'Banking & Fintech' | 'Enterprise Core & BI' | 'Retail & Commerce' | 'Energy & Mobility';
+  sector:
+    | 'Healthcare & Biopharma'
+    | 'Banking & Fintech'
+    | 'Enterprise Core & BI'
+    | 'Retail & Commerce'
+    | 'Energy & Mobility'
+    | 'Heritage, Agri & Legal';
   region: string;
   solution: string;
   appIds: string[];
@@ -1471,15 +1478,15 @@ export const CASE_STUDIES: CaseStudy[] = [
   },
   {
     id: 'cs_primebank',
-    client: 'Bank',
+    client: 'Prime Bank',
     sector: 'Banking & Fintech',
     region: 'Bangladesh / SAARC',
-    solution: 'BankOCR — Air-Gapped Document Intelligence (ICR)',
+    solution: 'PrimeOCR — Air-Gapped Document Intelligence (ICR)',
     appIds: ['icr_ops', 'cyber_sla', 'workflow_ai'],
-    headlineMetric: '<30s/form · 450%–580% realized ROI',
+    headlineMetric: '1.2M+ Docs · <30s/form · 450%–580% realized ROI',
     metrics: ['LLaMA 3.2 Vision + LayoutLMv3', '0.88 Confidence HITL Gate', 'BB ICT v4.0 On-Prem'],
     summary:
-      'Deployed self-hosted handwritten Bangla/English form extraction paired with a React Digital Twin verification UI, keeping 100% of banking PII inside bank firewalls.',
+      'Deployed self-hosted handwritten Bangla/English form extraction across 1.2M+ banking documents paired with a React Digital Twin verification UI, keeping 100% of PII inside bank firewalls (client-reported benchmark).',
     deployment: 'On-Prem',
   },
   {
@@ -1487,12 +1494,12 @@ export const CASE_STUDIES: CaseStudy[] = [
     client: 'Apollo JMI',
     sector: 'Healthcare & Biopharma',
     region: 'South Asia',
-    solution: 'Hospital Digital Twin & AI Clinical Operations',
+    solution: 'Hospital 360° Digital Twin & AI Clinical Operations',
     appIds: ['healthcare_erp', 'spatial_xr', 'voice_ai', 'cyber_sla'],
-    headlineMetric: 'HL7/FHIR Care Ops + Interactive Digital Twin',
+    headlineMetric: 'HL7/FHIR Care Ops + Interactive 360° Digital Twin',
     metrics: ['$45/bed/mo SaaS Pattern', 'AI Shift Handover & Rx OCR', 'Intelligent XR Facility Guides'],
     summary:
-      'Combined spatial hospital digital twins with clinical ERP workflows, automated shift handovers, and multilingual patient triage voice assistants.',
+      'Combined photorealistic 360° spatial hospital digital twins with clinical ERP workflows, automated shift handovers, and multilingual patient triage voice assistants.',
     deployment: 'Private VPC',
   },
   {
@@ -1500,12 +1507,12 @@ export const CASE_STUDIES: CaseStudy[] = [
     client: 'LABAID',
     sector: 'Healthcare & Biopharma',
     region: 'Bangladesh',
-    solution: 'VirtuED Medical AR & DiagnosticCentre AI',
+    solution: 'VirtuED Medical AR & VR LMS (n=240 Cohort)',
     appIds: ['healthcare_erp', 'spatial_xr'],
-    headlineMetric: 'Interactive Medical AR + Clinical AI Pre-Screening',
-    metrics: ['VirtuED AR Curriculum', 'Medical Image Reader', 'Rx OCR Verification'],
+    headlineMetric: '+30% Clinical Recall (n=240) + Rx OCR',
+    metrics: ['VirtuED AR Curriculum', 'Medical VR LMS Validation', 'Rx OCR Verification'],
     summary:
-      'Modernized clinical training and diagnostic operations through augmented reality anatomy modules and AI-assisted prescription/imaging review.',
+      'Modernized clinical training and diagnostic operations through augmented/virtual reality anatomy modules validated at +30% recall across a 240-learner cohort plus AI-assisted prescription review.',
     deployment: 'On-Prem',
   },
   {
@@ -1542,9 +1549,74 @@ export const CASE_STUDIES: CaseStudy[] = [
     solution: '3D Brand Experiences, 65+ Showroom MIS & 80 BaaS Swap Stations',
     appIds: ['mis_erp', 'iot_edge', 'fintech_rails', 'branding_geo'],
     headlineMetric: '65+ Showrooms · 80 BaaS Stations / 480 EVs',
-    metrics: ['<50ms Edge Telemetry', '365 Exchange Circular CRM', '3D DOOH & Event Games'],
+    metrics: ['<50ms Edge Telemetry', '365 Exchange Circular CRM', 'bKashVerse & 3D DOOH'],
     summary:
       'Powers interactive brand activations for Coca-Cola and bKashVerse alongside captive operational stacks across BEST showrooms and X Ltd EV battery-swap infrastructure.',
+    deployment: 'On-Prem',
+  },
+  {
+    id: 'cs_heritage_3d',
+    client: 'Puthia Rajbari & Old Central Jail',
+    sector: 'Heritage, Agri & Legal',
+    region: 'Bangladesh / Cultural Preservation',
+    solution: '360° Heritage Digital Twins & Aerial Drone Photogrammetry',
+    appIds: ['spatial_xr', 'voice_ai'],
+    headlineMetric: 'Sub-cm Aerial Photogrammetry · 360° Interactive Tours',
+    metrics: ['Drone LiDAR + Photogrammetry', 'UE5 Real-Time Walkthroughs', 'Multilingual AI Docent'],
+    summary:
+      'Reconstructed landmark architectural heritage complexes via aerial photogrammetry and 360° spatial capture for national archiving, civic education, and interactive virtual tourism.',
+    deployment: 'Private VPC',
+  },
+  {
+    id: 'cs_plant_care_ar',
+    client: 'Plant Care AR Vision Platform',
+    sector: 'Heritage, Agri & Legal',
+    region: 'South Asia / AgriTech',
+    solution: 'Offline Mobile AR Crop Pathology & Vision Classifier',
+    appIds: ['datasets', 'spatial_xr', 'iot_edge'],
+    headlineMetric: '1.4M Curated Images · 38 Disease Classes',
+    metrics: ['On-Device Quantized Vision', '38 Plant Pathology Classes', 'Offline Field Diagnostics'],
+    summary:
+      'Trained a compact mobile AR computer-vision pipeline on 1.4M+ curated regional botanical images to diagnose 38 crop diseases directly in low-connectivity agricultural zones.',
+    deployment: 'On-Prem',
+  },
+  {
+    id: 'cs_national_logistics',
+    client: 'Regional Fleet & National Logistics Ops',
+    sector: 'Energy & Mobility',
+    region: 'SAARC Distribution Corridor',
+    solution: 'Edge Route Optimization & Predictive Fleet Dispatch',
+    appIds: ['iot_edge', 'mis_erp', 'genai_bi'],
+    headlineMetric: '+25% On-Time Delivery · -18% Fuel Expenditure',
+    metrics: ['Real-Time MQTT Telemetry', 'Automated Route Re-Dispatch', 'Scope 3 Fuel Ledger'],
+    summary:
+      'Unified multi-depot dispatch telemetry with quantized edge analytics to eliminate idle mileage, lift on-time delivery by 25%, and trim fleet fuel burn by 18%.',
+    deployment: 'Private VPC',
+  },
+  {
+    id: 'cs_industrial_mfg',
+    client: 'Industrial Manufacturing Line Telemetry',
+    sector: 'Enterprise Core & BI',
+    region: 'South Asia / APAC',
+    solution: 'IR4/IR5 Edge Anomaly Detection & Predictive Maintenance',
+    appIds: ['iot_edge', 'legacy_mod', 'cyber_sla'],
+    headlineMetric: '<50ms Edge Anomaly Alerts · Zero Cloud Egress',
+    metrics: ['Wasm/MQTT Sensor Gateways', 'Legacy PLC Virtualization', '24/7 SecOps Hardening'],
+    summary:
+      'Retrofitted legacy factory machinery with quantized on-premises sensor gateways detecting vibration and thermal drift in under 50ms to prevent unplanned production halts.',
+    deployment: 'On-Prem',
+  },
+  {
+    id: 'cs_law_firm_rag',
+    client: 'Regional Corporate Law Practice',
+    sector: 'Heritage, Agri & Legal',
+    region: 'SAARC / Cross-Border Legal',
+    solution: 'Air-Gapped Legal Corrective RAG & Clause Verification',
+    appIds: ['icr_ops', 'workflow_ai', 'cyber_sla'],
+    headlineMetric: '-65% Contract Review Cycle · 100% Privileged On-Prem',
+    metrics: ['0.88 OPA Clause Verification', 'Zero External Data Retention', 'Audit-Ready Citation Map'],
+    summary:
+      'Deployed an air-gapped document and precedent retrieval assistant inside the firm’s local Server PC enclave, compressing due-diligence contract review time by 65% without breaching client privilege.',
     deployment: 'On-Prem',
   },
 ];

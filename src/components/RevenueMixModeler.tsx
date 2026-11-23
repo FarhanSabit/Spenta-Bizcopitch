@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import { BarChart3, Check, Layers, PieChart as PieChartIcon, RotateCcw, Split } from 'lucide-react';
 import { REVENUE_SCOPES, RevenueScopeId } from '../data/roiModel';
+import { GROWTH_MODE_SPECS, GrowthMode } from '../data/spentaEnrichments';
 import { useStack } from '../store/StackContext';
 
 export type MixPresetId = 'fy27' | 'fy31' | 'arr-heavy';
@@ -59,6 +60,7 @@ export interface SharedRevenueMixProps {
   activePreset?: MixPresetId;
   scopeWeights?: Record<RevenueScopeId, number>;
   targetOpexRatioPct?: number;
+  growthMode?: GrowthMode;
   onApplyPreset?: (preset: MixPresetId) => void;
   onChangeScopeWeight?: (scopeId: RevenueScopeId, value: number) => void;
   onChangeOpexRatio?: (value: number) => void;
@@ -73,6 +75,7 @@ export function RevenueMixModeler({
   activePreset: controlledPreset,
   scopeWeights: controlledWeights,
   targetOpexRatioPct: controlledOpex,
+  growthMode = 'conservative',
   onApplyPreset,
   onChangeScopeWeight,
   onChangeOpexRatio,
@@ -92,7 +95,10 @@ export function RevenueMixModeler({
   const scopeWeights = controlledWeights ?? localWeights;
   const targetOpexRatioPct = controlledOpex ?? localOpex;
 
-  const revenueScaleK = PRESET_REVENUE_SCALE_K[activePreset].totalRevK;
+  const growthMultiplier = GROWTH_MODE_SPECS[growthMode].mixMultiplier;
+  const revenueScaleK = Number(
+    (PRESET_REVENUE_SCALE_K[activePreset].totalRevK * growthMultiplier).toFixed(1),
+  );
 
   const revenueMixMetrics = useMemo(() => {
     const totalWeight = Object.values(scopeWeights).reduce((s, v) => s + v, 0) || 1;

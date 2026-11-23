@@ -222,6 +222,9 @@ export interface SavedProposal {
   email: string;
   deployment: 'On-Prem' | 'Private VPC' | 'Air-Gap' | 'SaaS';
   timeline: string;
+  engagementModel?: string;
+  commercialTier?: string;
+  onboardingPath?: string;
   notes: string;
   appIds: string[];
   appNames: string[];
@@ -258,6 +261,7 @@ export interface PendingNavFocus {
     | 'case'
     | 'blueprint'
     | 'studio'
+    | 'showreel'
     | 'brain-hub';
   id: string;
   appId?: string;

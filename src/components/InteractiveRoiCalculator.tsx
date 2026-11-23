@@ -17,10 +17,16 @@ import {
   Loader2,
   Printer,
   Server,
+  ShieldCheck,
   Split,
 } from 'lucide-react';
 import { SERVER_TIERS, SPENTA_APPS, ServerTierId } from '../data/spentaManifest';
 import { PRODUCT_ROI_PROFILES, computeProductRoi } from '../data/roiModel';
+import {
+  GROWTH_MODE_SPECS,
+  GrowthMode,
+  ROI_CONFIDENCE_EVIDENCE_NOTE,
+} from '../data/spentaEnrichments';
 import { useStack } from '../store/StackContext';
 import { downloadSerializedPrintDeckPdf } from '../utils/exportPitchDeckPdf';
 
@@ -53,6 +59,8 @@ export interface InteractiveRoiCalculatorProps {
   initialAppId?: string;
   sharedBenchmark?: SharedSearchBenchmarkState;
   onVerifyBenchmarks?: (payload: BenchmarkVerifyPayload) => Promise<void>;
+  growthMode?: GrowthMode;
+  onChangeGrowthMode?: (mode: GrowthMode) => void;
 }
 
 type StreamFilter = 'all' | 'builds' | 'retainers';
@@ -101,9 +109,19 @@ export function InteractiveRoiCalculator({
   initialAppId,
   sharedBenchmark,
   onVerifyBenchmarks,
+  growthMode: controlledGrowthMode,
+  onChangeGrowthMode,
 }: InteractiveRoiCalculatorProps) {
   const { theme, selectedApps, stackMetrics, toggleApp, selectedIds } = useStack();
   const isDark = theme === 'dark';
+
+  const [localGrowthMode, setLocalGrowthMode] = useState<GrowthMode>('conservative');
+  const growthMode = controlledGrowthMode ?? localGrowthMode;
+  const setGrowthMode = (next: GrowthMode) => {
+    if (onChangeGrowthMode) onChangeGrowthMode(next);
+    else setLocalGrowthMode(next);
+  };
+  const activeGrowthSpec = GROWTH_MODE_SPECS[growthMode];
 
   const [mode, setMode] = useState<'single' | 'stack'>('single');
   const [activeAppId, setActiveAppId] = useState<string>(initialAppId || SPENTA_APPS[0].id);
@@ -234,16 +252,30 @@ export function InteractiveRoiCalculator({
           )
         : 0;
 
+    const growthFactor = activeGrowthSpec.mixMultiplier;
+    const scaledYear1ClientValueUsd = Math.round(year1ClientValueUsd * growthFactor);
     const year1ClientInvestmentUsd = year1SpentaContractUsd + tierCapex;
-    const year1NetBenefitUsd = year1ClientValueUsd - year1ClientInvestmentUsd;
+    const year1NetBenefitUsd = scaledYear1ClientValueUsd - year1ClientInvestmentUsd;
     const client12MoRoiPct =
       year1ClientInvestmentUsd > 0
         ? Math.round((year1NetBenefitUsd / year1ClientInvestmentUsd) * 100)
         : 0;
     const paybackMonths =
-      year1ClientValueUsd > 0 && year1ClientInvestmentUsd > 0
-        ? Math.max(1.2, Number((year1ClientInvestmentUsd / (year1ClientValueUsd / 12)).toFixed(1)))
+      scaledYear1ClientValueUsd > 0 && year1ClientInvestmentUsd > 0
+        ? Math.max(
+            1.2,
+            Number((year1ClientInvestmentUsd / (scaledYear1ClientValueUsd / 12)).toFixed(1)),
+          )
         : 0;
+
+    // Disciplined 3-to-5-Year Annualized ROI strictly bounded within 25% min – 35% max confidence band
+    const rawRatioNorm = Math.min(1, Math.max(0, (revenueWeightedY1GmPct - 30) / 45));
+    const disciplinedAnnualRoiPct = Number(
+      (
+        activeGrowthSpec.targetRoiMinPct +
+        rawRatioNorm * (activeGrowthSpec.targetRoiMaxPct - activeGrowthSpec.targetRoiMinPct)
+      ).toFixed(1),
+    );
 
     const spenta3YrTcoUsd = oneTimeBuildUsd + tierCapex + totalRecurringAnnualUsd * 3;
     const spenta3YrLtvUsd = oneTimeBuildUsd + totalRecurringAnnualUsd * 3;
@@ -262,9 +294,10 @@ export function InteractiveRoiCalculator({
       serverCapexUsd: tierCapex,
       year1SpentaContractUsd,
       year1ClientInvestmentUsd,
-      year1ClientValueUsd,
+      year1ClientValueUsd: scaledYear1ClientValueUsd,
       year1NetBenefitUsd,
       client12MoRoiPct,
+      disciplinedAnnualRoiPct,
       paybackMonths,
       spenta3YrTcoUsd,
       western3YrTcoUsd,
@@ -275,7 +308,16 @@ export function InteractiveRoiCalculator({
       unweightedAvgGmPct,
       gmWeightingDeltaPct: Number((revenueWeightedY1GmPct - unweightedAvgGmPct).toFixed(1)),
     };
-  }, [mode, selectedApps, activeApp, scaleMap, effectiveTier, includeHardware, streamFilter]);
+  }, [
+    mode,
+    selectedApps,
+    activeApp,
+    scaleMap,
+    effectiveTier,
+    includeHardware,
+    streamFilter,
+    activeGrowthSpec,
+  ]);
 
   const tcoChartData = useMemo(
     () => [
@@ -504,6 +546,77 @@ export function InteractiveRoiCalculator({
             <Printer className="w-3.5 h-3.5" />
             <span>Print</span>
           </button>
+        </div>
+      </div>
+
+      {/* Disciplined Growth Mode Toggle (Conservative 25% Floor vs Aggressive Growth 35% Cap) + Highlighted Confidence & Evidence Note */}
+      <div className="mt-5 rounded-xl border border-[#1C6E46]/35 dark:border-[#6FCB9F]/35 bg-[#1C6E46]/[0.06] dark:bg-[#6FCB9F]/[0.07] p-4 space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-[#1C6E46] dark:text-[#6FCB9F]">
+              <ShieldCheck className="w-4 h-4 shrink-0" />
+              <span>{ROI_CONFIDENCE_EVIDENCE_NOTE.title}</span>
+            </div>
+            <p className="text-xs text-[#334155] dark:text-[#C8D0E4] mt-1 leading-relaxed">
+              {ROI_CONFIDENCE_EVIDENCE_NOTE.lead}
+            </p>
+          </div>
+
+          <div
+            role="group"
+            aria-label="Disciplined ROI Growth Mode"
+            className="inline-flex rounded-lg bg-white dark:bg-[#0B1020] p-1 border border-[#E4DFD6] dark:border-[#232B4A] self-start lg:self-auto shrink-0"
+          >
+            <button
+              type="button"
+              onClick={() => setGrowthMode('conservative')}
+              aria-pressed={growthMode === 'conservative'}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                growthMode === 'conservative'
+                  ? 'bg-[#1F3863] text-white dark:bg-[#8FA6E8] dark:text-[#0B1020]'
+                  : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+              }`}
+            >
+              Conservative (25% ROI Floor)
+            </button>
+            <button
+              type="button"
+              onClick={() => setGrowthMode('aggressive')}
+              aria-pressed={growthMode === 'aggressive'}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                growthMode === 'aggressive'
+                  ? 'bg-[#1C6E46] text-white dark:bg-[#6FCB9F] dark:text-[#0B1020]'
+                  : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+              }`}
+            >
+              Aggressive Growth (35% ROI Cap)
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-[#1C6E46]/20 dark:border-[#6FCB9F]/20 text-xs font-mono tabular-nums">
+          <span className="text-[#16213A] dark:text-[#E7EBF5] font-semibold">
+            Active Posture: {activeGrowthSpec.confidenceBadge}
+          </span>
+          <span className="text-[#1C6E46] dark:text-[#6FCB9F] font-bold">
+            Disciplined 3–5 Yr Annualized ROI on Total Investment: {activeMetrics.disciplinedAnnualRoiPct.toFixed(1)}% (Band: 25%–35%)
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 pt-1">
+          {ROI_CONFIDENCE_EVIDENCE_NOTE.pillars.map((pillar) => (
+            <div
+              key={pillar.label}
+              className="rounded-lg bg-white/85 dark:bg-[#0F1529]/85 border border-[#E4DFD6] dark:border-[#232B4A] p-2.5"
+            >
+              <div className="text-[11px] font-bold text-[#16213A] dark:text-[#E7EBF5]">
+                {pillar.label}
+              </div>
+              <p className="text-[11px] text-[#4A5568] dark:text-[#A4ADC6] mt-0.5 leading-relaxed">
+                {pillar.detail}
+              </p>
+            </div>
+          ))}
         </div>
       </div>
 

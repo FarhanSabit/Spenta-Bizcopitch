@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  BookOpen,
   Building2,
   Check,
   CheckCircle2,
   Copy,
   Download,
+  FileText,
   Layers,
   Mail,
   Send,
   ShieldCheck,
   Trash2,
+  Users,
 } from 'lucide-react';
 import {
   CASE_STUDIES,
@@ -17,10 +20,22 @@ import {
   SERVER_TIERS,
   SPENTA_CONTACT_EMAIL,
 } from '../data/spentaManifest';
+import {
+  ADVISORY_NETWORK,
+  COMMERCIAL_TIERS,
+  CORE_LEADERSHIP_TEAM,
+  CORPORATE_LINEAGE,
+  DATA_ROOM_DOCUMENTS,
+  ENGAGEMENT_MODELS,
+  INVESTOR_GLOSSARY,
+  ONBOARDING_PATHS,
+  QA_CREDIBILITY_SHIELD,
+} from '../data/spentaEnrichments';
 import { SavedProposal, useStack } from '../store/StackContext';
 import { copyTextWithFallback } from '../utils/shareUrlCodec';
 import { DesignComparisonTable } from './DesignComparisonTable';
 import { PromptThemeStudio } from './PromptThemeStudio';
+import { ShowreelAndBrandsStudio } from './ShowreelAndBrandsStudio';
 
 const SECTORS = [
   'All',
@@ -29,6 +44,7 @@ const SECTORS = [
   'Enterprise Core & BI',
   'Retail & Commerce',
   'Energy & Mobility',
+  'Heritage, Agri & Legal',
 ] as const;
 
 export function ResourcesView() {
@@ -64,9 +80,18 @@ export function ResourcesView() {
           : 'On-Prem',
   );
   const [timeline, setTimeline] = useState('Q2–Q3 Pilot (60–90 Days)');
+  const [engagementModel, setEngagementModel] = useState<string>(ENGAGEMENT_MODELS[0].label);
+  const [commercialTier, setCommercialTier] = useState<string>(
+    `${COMMERCIAL_TIERS[0].code} — ${COMMERCIAL_TIERS[0].name}`,
+  );
+  const [onboardingPath, setOnboardingPath] = useState<string>(
+    `${ONBOARDING_PATHS[0].step}: ${ONBOARDING_PATHS[0].name}`,
+  );
   const [notes, setNotes] = useState('');
   const [lastSubmitted, setLastSubmitted] = useState<SavedProposal | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showreelSeek, setShowreelSeek] = useState<{ seconds: number; nonce: number } | null>(null);
+  const [openQaIdx, setOpenQaIdx] = useState<number>(0);
 
   useEffect(() => {
     setDeployment(
@@ -81,6 +106,14 @@ export function ResourcesView() {
   useEffect(() => {
     if (pendingNavFocus?.type === 'studio') {
       setResourcesMode('studio');
+      clearPendingNavFocus();
+    } else if (pendingNavFocus?.type === 'showreel') {
+      setResourcesMode('proofs');
+      const seconds = Number(pendingNavFocus.id);
+      setShowreelSeek({
+        seconds: Number.isFinite(seconds) && seconds >= 0 ? seconds : 0,
+        nonce: Date.now(),
+      });
       clearPendingNavFocus();
     } else if (pendingNavFocus?.type === 'case') {
       setResourcesMode('proofs');
@@ -113,6 +146,9 @@ export function ResourcesView() {
       email: email.trim(),
       deployment,
       timeline,
+      engagementModel,
+      commercialTier,
+      onboardingPath,
       notes: notes.trim(),
     });
     setLastSubmitted(saved);
@@ -201,7 +237,10 @@ export function ResourcesView() {
         <PromptThemeStudio />
       ) : (
         <>
-          {/* Enterprise Case Studies */}
+          {/* Looping Brand Collaboration Slider & Interactive 1080p Showreel Studio */}
+          <ShowreelAndBrandsStudio seekSignal={showreelSeek} />
+
+          {/* Enterprise Case Studies (12 Verified Production Deployments) */}
           <section className="space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="inline-flex items-center gap-2">
@@ -322,6 +361,298 @@ export function ResourcesView() {
               </div>
             </article>
           ))}
+        </div>
+      </section>
+
+      {/* Core Leadership, Advisors & Corporate Lineage (4 Confirmed Leaders) */}
+      <section className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-5 sm:p-6 space-y-5">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-2 pb-4 border-b border-[#E4DFD6] dark:border-[#232B4A]">
+          <div>
+            <div className="inline-flex items-center gap-2 text-xs font-mono text-[#1C6E46] dark:text-[#6FCB9F] font-semibold">
+              <Users className="w-3.5 h-3.5" />
+              <span>Leadership &amp; Institutional Lineage · San Jose · Australia · Dhaka R&amp;D Hub</span>
+            </div>
+            <h2 className="text-base sm:text-lg font-bold text-[#16213A] dark:text-[#E7EBF5] mt-0.5">
+              Core Leadership, Regulatory Advisors &amp; GenDev → GxDx → Spenta Evolution
+            </h2>
+          </div>
+          <span className="text-xs font-mono text-[#5F6576] dark:text-[#8E96B0]">
+            4 Core Leaders · 20-FTE Dhaka Engineering Enclave
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {CORE_LEADERSHIP_TEAM.map((leader) => (
+            <article
+              key={leader.id}
+              className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] p-4 flex flex-col justify-between gap-3"
+            >
+              <div>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-[#1F3863] dark:bg-[#8FA6E8] text-white dark:text-[#0B1020] font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                    {leader.initials}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-[#16213A] dark:text-[#E7EBF5] truncate">
+                      {leader.name}
+                    </h3>
+                    <div className="text-[11px] font-semibold text-[#1C6E46] dark:text-[#6FCB9F] truncate">
+                      {leader.role}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-[11px] font-mono text-[#5F6576] dark:text-[#8E96B0] mt-2.5">
+                  {leader.location}
+                </div>
+                <p className="text-xs text-[#334155] dark:text-[#C8D0E4] mt-1.5 leading-relaxed">
+                  {leader.focus}
+                </p>
+              </div>
+              <p className="text-[11px] text-[#5F6576] dark:text-[#8E96B0] pt-2.5 border-t border-[#E4DFD6] dark:border-[#232B4A] leading-relaxed">
+                {leader.credentials}
+              </p>
+            </article>
+          ))}
+        </div>
+
+        {/* Corporate Lineage & Clinical/Regulatory Advisors */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
+          <div className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] p-4 space-y-3">
+            <div className="text-xs font-bold text-[#16213A] dark:text-[#E7EBF5]">
+              Corporate Lineage: GenDev → GxDx Solutions → Spenta Technology
+            </div>
+            <div className="space-y-2.5">
+              {CORPORATE_LINEAGE.map((step) => (
+                <div
+                  key={step.entity}
+                  className="pt-2 first:pt-0 border-t first:border-t-0 border-[#E4DFD6] dark:border-[#232B4A]"
+                >
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="font-bold text-[#16213A] dark:text-[#E7EBF5]">
+                      {step.entity}
+                    </span>
+                    <span className="font-mono text-[10px] text-[#1C6E46] dark:text-[#6FCB9F]">
+                      {step.era}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#4A5568] dark:text-[#A4ADC6] mt-0.5 leading-relaxed">
+                    {step.summary}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] p-4 space-y-3">
+            <div className="text-xs font-bold text-[#16213A] dark:text-[#E7EBF5]">
+              Clinical, Regulatory &amp; Engineering Advisory Network
+            </div>
+            <div className="space-y-2.5">
+              {ADVISORY_NETWORK.map((adv) => (
+                <div
+                  key={adv.track}
+                  className="pt-2 first:pt-0 border-t first:border-t-0 border-[#E4DFD6] dark:border-[#232B4A]"
+                >
+                  <div className="text-xs font-bold text-[#16213A] dark:text-[#E7EBF5]">
+                    {adv.track}
+                  </div>
+                  <p className="text-[11px] text-[#4A5568] dark:text-[#A4ADC6] mt-0.5 leading-relaxed">
+                    {adv.scope}
+                  </p>
+                  <div className="text-[10px] font-mono text-[#1F3863] dark:text-[#8FA6E8] mt-1">
+                    {adv.pathways}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Commercial Engagement Tiers (Model A / B / C) & 3-Path Onboarding */}
+      <section className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-5 sm:p-6 space-y-5">
+        <div>
+          <div className="text-xs font-mono text-[#1C6E46] dark:text-[#6FCB9F] font-semibold">
+            Commercial Architecture · Model A / B / C Packaging &amp; Onboarding
+          </div>
+          <h2 className="text-base sm:text-lg font-bold text-[#16213A] dark:text-[#E7EBF5] mt-0.5">
+            Structured Enterprise Engagement Tiers &amp; 3-Path Rollout Playbook
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {COMMERCIAL_TIERS.map((tier) => (
+            <article
+              key={tier.id}
+              className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] p-4 flex flex-col justify-between gap-3"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2 text-xs font-mono">
+                  <span className="font-bold text-[#1F3863] dark:text-[#8FA6E8]">{tier.code}</span>
+                  <span className="font-semibold text-[#1C6E46] dark:text-[#6FCB9F] tabular-nums">
+                    {tier.pricingRange}
+                  </span>
+                </div>
+                <h3 className="text-sm font-bold text-[#16213A] dark:text-[#E7EBF5] mt-1">
+                  {tier.name}
+                </h3>
+                <p className="text-[11px] text-[#5F6576] dark:text-[#8E96B0] mt-0.5">
+                  {tier.targetBuyer} · {tier.cadence}
+                </p>
+                <ul className="mt-3 space-y-1.5 text-xs text-[#4A5568] dark:text-[#A4ADC6]">
+                  {tier.deliverables.map((d) => (
+                    <li key={d} className="flex items-start gap-1.5">
+                      <Check className="w-3.5 h-3.5 text-[#1C6E46] dark:text-[#6FCB9F] shrink-0 mt-0.5" />
+                      <span>{d}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setCommercialTier(`${tier.code} — ${tier.name}`);
+                  document
+                    .getElementById('spenta-proposal-form')
+                    ?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="w-full py-2 px-3 rounded-lg border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] hover:border-[#1F3863] text-xs font-semibold text-[#16213A] dark:text-[#E7EBF5] transition-colors cursor-pointer"
+              >
+                Select {tier.code} in Proposal Builder
+              </button>
+            </article>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-[#E4DFD6] dark:border-[#232B4A]">
+          {ONBOARDING_PATHS.map((path) => (
+            <div
+              key={path.id}
+              className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] p-3.5"
+            >
+              <div className="flex items-center justify-between text-[11px] font-mono">
+                <span className="font-bold text-[#1C6E46] dark:text-[#6FCB9F]">{path.step}</span>
+                <span className="text-[#5F6576] dark:text-[#8E96B0]">{path.duration}</span>
+              </div>
+              <div className="text-xs font-bold text-[#16213A] dark:text-[#E7EBF5] mt-1">
+                {path.name}
+              </div>
+              <p className="text-[11px] text-[#4A5568] dark:text-[#A4ADC6] mt-1 leading-relaxed">
+                {path.outcome}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Investor Glossary, Q&A Credibility Shield & Downloadable Data Room */}
+      <section className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-5 sm:p-6 space-y-5">
+        <div className="inline-flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-[#1C6E46] dark:text-[#6FCB9F]" strokeWidth={1.5} />
+          <h2 className="text-base sm:text-lg font-bold text-[#16213A] dark:text-[#E7EBF5]">
+            Investor Glossary, Q&amp;A Credibility Shield &amp; Downloadable Data Room
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* Q&A Credibility Shield */}
+          <div className="lg:col-span-6 space-y-2.5">
+            <div className="text-xs font-bold text-[#16213A] dark:text-[#E7EBF5]">
+              Institutional Q&amp;A Credibility Shield
+            </div>
+            {QA_CREDIBILITY_SHIELD.map((qa, idx) => {
+              const isOpen = openQaIdx === idx;
+              return (
+                <div
+                  key={qa.question}
+                  className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] overflow-hidden"
+                >
+                  <button
+                    type="button"
+                    aria-expanded={isOpen}
+                    onClick={() => setOpenQaIdx(isOpen ? -1 : idx)}
+                    className="w-full text-left px-4 py-3 flex items-center justify-between gap-2 text-xs font-bold text-[#16213A] dark:text-[#E7EBF5] cursor-pointer"
+                  >
+                    <span>{qa.question}</span>
+                    <span className="font-mono text-[#1C6E46] dark:text-[#6FCB9F] shrink-0">
+                      {isOpen ? '−' : '+'}
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <div className="px-4 pb-3.5 text-xs text-[#4A5568] dark:text-[#A4ADC6] leading-relaxed border-t border-[#E4DFD6] dark:border-[#232B4A] pt-2.5">
+                      {qa.answer}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Investor Glossary */}
+          <div className="lg:col-span-6 space-y-2.5">
+            <div className="text-xs font-bold text-[#16213A] dark:text-[#E7EBF5]">
+              Technical &amp; Financial Investor Glossary
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {INVESTOR_GLOSSARY.map((item) => (
+                <div
+                  key={item.term}
+                  className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] p-3"
+                >
+                  <div className="text-xs font-bold text-[#1F3863] dark:text-[#8FA6E8]">
+                    {item.term}
+                  </div>
+                  <p className="text-[11px] text-[#4A5568] dark:text-[#A4ADC6] mt-1 leading-relaxed">
+                    {item.definition}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Downloadable Data Room Documents */}
+        <div className="pt-4 border-t border-[#E4DFD6] dark:border-[#232B4A]">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="inline-flex items-center gap-2 text-xs font-bold text-[#16213A] dark:text-[#E7EBF5]">
+              <FileText className="w-4 h-4 text-[#1C6E46] dark:text-[#6FCB9F]" />
+              <span>Investor &amp; Technical Data Room ({DATA_ROOM_DOCUMENTS.length} Verified Briefs)</span>
+            </div>
+            <span className="text-[11px] text-[#5F6576] dark:text-[#8E96B0]">
+              Direct workspace asset downloads
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {DATA_ROOM_DOCUMENTS.map((doc) => (
+              <div
+                key={doc.id}
+                className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] p-4 flex flex-col justify-between gap-3"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 text-[10px] font-mono text-[#5F6576] dark:text-[#8E96B0]">
+                    <span className="text-[#1C6E46] dark:text-[#6FCB9F] font-semibold">
+                      {doc.category}
+                    </span>
+                    <span>{doc.format}</span>
+                  </div>
+                  <h3 className="text-xs sm:text-sm font-bold text-[#16213A] dark:text-[#E7EBF5] mt-1">
+                    {doc.title}
+                  </h3>
+                  <p className="text-[11px] text-[#4A5568] dark:text-[#A4ADC6] mt-1 leading-relaxed">
+                    {doc.description}
+                  </p>
+                </div>
+                <a
+                  href={doc.href}
+                  download={doc.downloadName}
+                  className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-[#1F3863] dark:bg-[#8FA6E8] text-white dark:text-[#0B1020] text-xs font-semibold hover:opacity-95 transition-opacity"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Brief</span>
+                </a>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -506,6 +837,59 @@ export function ResourcesView() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#16213A] dark:text-[#E7EBF5] mb-1">
+                    Commercial Tier
+                  </label>
+                  <select
+                    value={commercialTier}
+                    onChange={(e) => setCommercialTier(e.target.value)}
+                    className="w-full min-h-[40px] px-3 py-2 text-sm bg-[#FAF8F4] dark:bg-[#0F1529] border border-[#E4DFD6] dark:border-[#232B4A] rounded-lg text-[#16213A] dark:text-[#E7EBF5] focus:outline-none focus:border-[#1F3863] dark:focus:border-[#8FA6E8]"
+                  >
+                    {COMMERCIAL_TIERS.map((t) => (
+                      <option key={t.id} value={`${t.code} — ${t.name}`}>
+                        {t.code} — {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#16213A] dark:text-[#E7EBF5] mb-1">
+                    Engagement Model
+                  </label>
+                  <select
+                    value={engagementModel}
+                    onChange={(e) => setEngagementModel(e.target.value)}
+                    className="w-full min-h-[40px] px-3 py-2 text-sm bg-[#FAF8F4] dark:bg-[#0F1529] border border-[#E4DFD6] dark:border-[#232B4A] rounded-lg text-[#16213A] dark:text-[#E7EBF5] focus:outline-none focus:border-[#1F3863] dark:focus:border-[#8FA6E8]"
+                  >
+                    {ENGAGEMENT_MODELS.map((m) => (
+                      <option key={m.id} value={m.label}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#16213A] dark:text-[#E7EBF5] mb-1">
+                    Onboarding Path
+                  </label>
+                  <select
+                    value={onboardingPath}
+                    onChange={(e) => setOnboardingPath(e.target.value)}
+                    className="w-full min-h-[40px] px-3 py-2 text-sm bg-[#FAF8F4] dark:bg-[#0F1529] border border-[#E4DFD6] dark:border-[#232B4A] rounded-lg text-[#16213A] dark:text-[#E7EBF5] focus:outline-none focus:border-[#1F3863] dark:focus:border-[#8FA6E8]"
+                  >
+                    {ONBOARDING_PATHS.map((p) => (
+                      <option key={p.id} value={`${p.step}: ${p.name}`}>
+                        {p.step} — {p.duration}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-[#16213A] dark:text-[#E7EBF5] mb-1">
                   Compliance Scope, Site Count or Custom Requirements
@@ -555,7 +939,7 @@ export function ResourcesView() {
                   <a
                     href={buildMailtoHref(
                       `Spenta Proposal Request — ${lastSubmitted.organization} (${lastSubmitted.appIds.length} Modules)`,
-                      `Organization: ${lastSubmitted.organization}\nContact: ${lastSubmitted.contactName} (${lastSubmitted.email})\nDeployment: ${lastSubmitted.deployment}\nTimeline: ${lastSubmitted.timeline}\nNotes: ${lastSubmitted.notes || 'None'}`,
+                      `Organization: ${lastSubmitted.organization}\nContact: ${lastSubmitted.contactName} (${lastSubmitted.email})\nDeployment: ${lastSubmitted.deployment}\nTimeline: ${lastSubmitted.timeline}\nCommercial Tier: ${lastSubmitted.commercialTier || 'Standard'}\nEngagement Model: ${lastSubmitted.engagementModel || 'Standard'}\nOnboarding Path: ${lastSubmitted.onboardingPath || 'Standard'}\nNotes: ${lastSubmitted.notes || 'None'}`,
                     )}
                     className="inline-flex items-center gap-1.5 min-h-[36px] px-3 py-1.5 rounded-lg bg-[#1C6E46] dark:bg-[#6FCB9F] text-white dark:text-[#0B1020] font-bold"
                   >

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   ChevronLeft,
@@ -13,7 +13,14 @@ import {
   SlidersHorizontal,
   X,
 } from 'lucide-react';
-import { PITCH_DECK_SLIDES, SERVER_TIERS } from '../data/spentaManifest';
+import { PITCH_DECK_SLIDES, PitchSlide, SERVER_TIERS } from '../data/spentaManifest';
+import {
+  AI_SAFETY_CLIMATE_SLIDES,
+  CTO_TECHNICAL_SLIDES,
+  INVESTOR_MASTER_ADDITIONAL_SLIDES,
+  PITCH_DECK_TRACKS,
+  PitchDeckTrackId,
+} from '../data/spentaEnrichments';
 import { useStack } from '../store/StackContext';
 import {
   PdfThemeOption,
@@ -34,6 +41,7 @@ export function PitchDeckView() {
     mobileGridVisible,
     toggleMobileGrid,
   } = useStack();
+  const [activeTrack, setActiveTrack] = useState<PitchDeckTrackId>('investor-master');
   const [slideIdx, setSlideIdx] = useState(0);
   const [displayedIdx, setDisplayedIdx] = useState(0);
   const [transitionStage, setTransitionStage] = useState<'visible' | 'fading-out' | 'fading-in'>(
@@ -44,11 +52,31 @@ export function PitchDeckView() {
   const transitionTimerRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
+  const investorMasterSlides = useMemo<PitchSlide[]>(() => {
+    const baseWithoutAsk = PITCH_DECK_SLIDES.slice(0, PITCH_DECK_SLIDES.length - 1);
+    const askSlide = PITCH_DECK_SLIDES[PITCH_DECK_SLIDES.length - 1];
+    return [...baseWithoutAsk, ...INVESTOR_MASTER_ADDITIONAL_SLIDES, askSlide].map((s, idx) => ({
+      ...s,
+      num: idx + 1,
+    }));
+  }, []);
+
+  const activeSlides = useMemo<PitchSlide[]>(() => {
+    if (activeTrack === 'cto-technical') return CTO_TECHNICAL_SLIDES;
+    if (activeTrack === 'ai-safety-climate') return AI_SAFETY_CLIMATE_SLIDES;
+    return investorMasterSlides;
+  }, [activeTrack, investorMasterSlides]);
+
+  const activeTrackMeta = useMemo(
+    () => PITCH_DECK_TRACKS.find((t) => t.id === activeTrack) ?? PITCH_DECK_TRACKS[0],
+    [activeTrack],
+  );
+
   // High-Quality PDF Export state & modal options
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [exportScope, setExportScope] = useState<ExportScope>('all');
   const [rangeStart, setRangeStart] = useState<number>(1);
-  const [rangeEnd, setRangeEnd] = useState<number>(PITCH_DECK_SLIDES.length);
+  const [rangeEnd, setRangeEnd] = useState<number>(activeSlides.length);
   const [includeNotesInPdf, setIncludeNotesInPdf] = useState(true);
   const [includeStackAppendix, setIncludeStackAppendix] = useState(true);
   const [pdfTheme, setPdfTheme] = useState<PdfThemeOption>('auto');
@@ -57,10 +85,36 @@ export function PitchDeckView() {
   const [blobPdfState, setBlobPdfState] = useState<'idle' | 'exporting' | 'done'>('idle');
   const [blobPdfProgress, setBlobPdfProgress] = useState<string>('');
 
-  const total = PITCH_DECK_SLIDES.length;
-  const slide = PITCH_DECK_SLIDES[displayedIdx];
-  const activeSlide = PITCH_DECK_SLIDES[slideIdx];
+  const total = activeSlides.length;
+  const safeDisplayedIdx = Math.min(displayedIdx, total - 1);
+  const safeSlideIdx = Math.min(slideIdx, total - 1);
+  const slide = activeSlides[safeDisplayedIdx];
+  const activeSlide = activeSlides[safeSlideIdx];
   const isDarkSlide = slide.theme === 'dark';
+
+  const handleSelectTrack = (trackId: PitchDeckTrackId) => {
+    if (trackId === activeTrack) return;
+    if (transitionTimerRef.current !== null) {
+      window.clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+    }
+    if (rafRef.current !== null) {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    const nextLength =
+      trackId === 'cto-technical'
+        ? CTO_TECHNICAL_SLIDES.length
+        : trackId === 'ai-safety-climate'
+          ? AI_SAFETY_CLIMATE_SLIDES.length
+          : investorMasterSlides.length;
+    setActiveTrack(trackId);
+    setSlideIdx(0);
+    setDisplayedIdx(0);
+    setTransitionStage('visible');
+    setRangeStart(1);
+    setRangeEnd(nextLength);
+  };
 
   const navigateToSlide = useCallback(
     (targetIdx: number) => {
@@ -175,19 +229,17 @@ export function PitchDeckView() {
     setPdfState('exporting');
     setPdfProgress('Preparing slides…');
 
-    let targetSlides = PITCH_DECK_SLIDES;
-    let filename = 'Spenta-Sovereign-OS-18-Slide-Investor-Deck.pdf';
+    let targetSlides = activeSlides;
+    let filename = `Spenta-Sovereign-OS-${activeTrackMeta.filenameSlug}.pdf`;
 
     if (scope === 'current') {
       targetSlides = [activeSlide];
-      filename = `Spenta-Slide-${String(activeSlide.num).padStart(2, '0')}-${activeSlide.section
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')}.pdf`;
+      filename = `Spenta-${activeTrackMeta.filenameSlug}-Slide-${String(activeSlide.num).padStart(2, '0')}.pdf`;
     } else if (scope === 'range') {
       const start = Math.max(1, Math.min(total, Math.min(rangeStart, rangeEnd)));
       const end = Math.max(1, Math.min(total, Math.max(rangeStart, rangeEnd)));
-      targetSlides = PITCH_DECK_SLIDES.slice(start - 1, end);
-      filename = `Spenta-Investor-Deck-Slides-${String(start).padStart(2, '0')}-${String(end).padStart(
+      targetSlides = activeSlides.slice(start - 1, end);
+      filename = `Spenta-${activeTrackMeta.filenameSlug}-Slides-${String(start).padStart(2, '0')}-${String(end).padStart(
         2,
         '0',
       )}.pdf`;
@@ -222,7 +274,7 @@ export function PitchDeckView() {
     try {
       await downloadSerializedPrintDeckPdf({
         containerSelector: '.pitch-deck-print-deck',
-        filename: 'Spenta-Sovereign-OS-Pitch-Deck-Print.pdf',
+        filename: `Spenta-Sovereign-OS-${activeTrackMeta.filenameSlug}-Print.pdf`,
         onProgress: (curr, tot) => {
           setBlobPdfProgress(`Blob PDF ${curr}/${tot}…`);
         },
@@ -279,19 +331,52 @@ export function PitchDeckView() {
 
   return (
     <div className="space-y-5 print:space-y-0">
-      {/* Header Bar */}
-      <section className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-4 sm:p-5 flex flex-col xl:flex-row xl:items-center justify-between gap-3 no-print pitch-deck-nav">
-        <div>
-          <div className="inline-flex items-center gap-1.5 text-[11px] font-mono text-[#1C6E46] dark:text-[#6FCB9F] uppercase tracking-[0.14em]">
-            <Presentation className="w-3.5 h-3.5" strokeWidth={1.5} />
-            <span>18-SLIDE MASTER INVESTOR DECK · RECONCILED FY2027–FY2031</span>
+      {/* Header Bar + Multi-Track Deck Switcher */}
+      <section className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-4 sm:p-5 space-y-3 no-print pitch-deck-nav">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+          <div>
+            <div className="inline-flex items-center gap-1.5 text-[11px] font-mono text-[#1C6E46] dark:text-[#6FCB9F] uppercase tracking-[0.14em]">
+              <Presentation className="w-3.5 h-3.5" strokeWidth={1.5} />
+              <span>
+                {total}-SLIDE TRACK · {activeTrackMeta.shortLabel.toUpperCase()}
+              </span>
+            </div>
+            <h1 className="text-xl sm:text-2xl font-extrabold text-[#16213A] dark:text-[#E7EBF5] tracking-tight mt-0.5">
+              Pitch Deck — {activeTrackMeta.label}
+            </h1>
+            <p className="text-xs text-[#5F6576] dark:text-[#8E96B0] mt-0.5">
+              {activeTrackMeta.subtitle}
+            </p>
           </div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-[#16213A] dark:text-[#E7EBF5] tracking-tight mt-0.5">
-            Pitch Deck — Spenta Sovereign OS Investor Presentation
-          </h1>
+
+          <div
+            role="tablist"
+            aria-label="Pitch deck presentation track"
+            className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-[#F2EFE9] dark:bg-[#0F1529] border border-[#E4DFD6] dark:border-[#232B4A] self-start xl:self-auto"
+          >
+            {PITCH_DECK_TRACKS.map((track) => {
+              const isSelected = track.id === activeTrack;
+              return (
+                <button
+                  key={track.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  onClick={() => handleSelectTrack(track.id)}
+                  className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#1F3863] text-white dark:bg-[#8FA6E8] dark:text-[#0B1020]'
+                      : 'text-[#4A5568] dark:text-[#A4ADC6] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+                  }`}
+                >
+                  {track.shortLabel}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-[#E4DFD6] dark:border-[#232B4A]">
           <span className="hidden 2xl:inline-flex items-center gap-1.5 text-xs font-mono text-[#5F6576] dark:text-[#8E96B0] bg-[#FAF8F4] dark:bg-[#0F1529] border border-[#E4DFD6] dark:border-[#232B4A] px-2.5 py-1.5 rounded-lg">
             <Keyboard className="w-3.5 h-3.5" strokeWidth={1.5} /> ← / → Arrows
           </span>
@@ -387,11 +472,11 @@ export function PitchDeckView() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pitch-deck-screen-only">
         <aside className="lg:col-span-3 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-3 max-h-[260px] lg:max-h-[640px] overflow-y-auto order-2 lg:order-1 no-print pitch-deck-nav">
           <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#5F6576] dark:text-[#8E96B0] px-2 pb-2 border-b border-[#E4DFD6] dark:border-[#232B4A]">
-            Slide Index (18 Slides)
+            Slide Index ({total} Slides)
           </div>
           <div className="mt-2 space-y-1">
-            {PITCH_DECK_SLIDES.map((s, idx) => {
-              const active = idx === slideIdx;
+            {activeSlides.map((s, idx) => {
+              const active = idx === safeSlideIdx;
               return (
                 <button
                   key={s.num}
@@ -624,10 +709,10 @@ export function PitchDeckView() {
         </div>
       </div>
 
-      {/* Print-Only Paginated 18-Slide Executive Deck (High-Contrast Paper-Safe Formatting) */}
+      {/* Print-Only Paginated Active Track Executive Deck */}
       <div className="pitch-deck-print-deck">
-        {PITCH_DECK_SLIDES.map((s) => (
-          <article key={s.num} className="pitch-deck-print-slide">
+        {activeSlides.map((s) => (
+          <article key={`${activeTrack}-${s.num}`} className="pitch-deck-print-slide">
             {/* Top Slide Header */}
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 min-w-0">
@@ -705,8 +790,8 @@ export function PitchDeckView() {
 
             {/* Slide Footer */}
             <div className="pitch-deck-print-footer flex items-center justify-between gap-2 font-mono">
-              <span>spenta.tech · Sovereign OS · 18-Slide Master Investor Deck</span>
-              <span>Confidential Investor Briefing · hello@spenta.tech</span>
+              <span>spenta.tech · Sovereign OS · {activeTrackMeta.label}</span>
+              <span>Confidential Briefing · hello@spenta.tech</span>
             </div>
           </article>
         ))}

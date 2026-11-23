@@ -6,6 +6,7 @@ import {
   ComposedChart,
   Legend,
   Line,
+  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -45,6 +46,13 @@ import {
   RevenueScopeId,
   computeProductRoi,
 } from '../data/roiModel';
+import {
+  COMPETITIVE_EDGE_MATRIX,
+  GLOBAL_PEER_COMPARABLES,
+  GROWTH_MODE_SPECS,
+  GrowthMode,
+  ROI_CONFIDENCE_EVIDENCE_NOTE,
+} from '../data/spentaEnrichments';
 import { useStack } from '../store/StackContext';
 import {
   QuarterRow,
@@ -162,11 +170,23 @@ export function FinancialsView() {
   });
 
   // Shared 5-Scope Revenue Mix Modeler state (synced between FinancialsView PieChart and RevenueMixModeler)
+  const [growthMode, setGrowthMode] = useState<GrowthMode>('conservative');
   const [mixPreset, setMixPreset] = useState<MixPresetId>('fy31');
   const [mixScopeWeights, setMixScopeWeights] = useState<Record<RevenueScopeId, number>>(
     () => DEFAULT_MIX_WEIGHTS.fy31,
   );
   const [mixOpexRatioPct, setMixOpexRatioPct] = useState<number>(DEFAULT_PRESET_OPEX.fy31);
+  const [scopeLineMetric, setScopeLineMetric] = useState<'revenue' | 'share'>('revenue');
+  const [hiddenScopeLines, setHiddenScopeLines] = useState<RevenueScopeId[]>([]);
+  const [csvExported, setCsvExported] = useState<boolean>(false);
+
+  const activeGrowthSpec = GROWTH_MODE_SPECS[growthMode];
+
+  const toggleScopeLineVisibility = (scopeId: RevenueScopeId) => {
+    setHiddenScopeLines((prev) =>
+      prev.includes(scopeId) ? prev.filter((id) => id !== scopeId) : [...prev, scopeId],
+    );
+  };
 
   const handleApplyMixPreset = (preset: MixPresetId) => {
     setMixPreset(preset);
@@ -180,7 +200,9 @@ export function FinancialsView() {
 
   const revenueMixPieData = useMemo(() => {
     const totalWeight = Object.values(mixScopeWeights).reduce((s, v) => s + v, 0) || 1;
-    const scaleK = PRESET_REVENUE_SCALE_K[mixPreset].totalRevK;
+    const scaleK = Number(
+      (PRESET_REVENUE_SCALE_K[mixPreset].totalRevK * activeGrowthSpec.mixMultiplier).toFixed(1),
+    );
     let totalGpK = 0;
     let buildRevK = 0;
     let recurringRevK = 0;
@@ -216,7 +238,7 @@ export function FinancialsView() {
       recurringSharePct,
       totalGpK: Number(totalGpK.toFixed(1)),
     };
-  }, [mixScopeWeights, mixPreset, mixOpexRatioPct]);
+  }, [mixScopeWeights, mixPreset, mixOpexRatioPct, activeGrowthSpec.mixMultiplier]);
 
   const isDark = theme === 'dark';
 
@@ -395,6 +417,103 @@ export function FinancialsView() {
       };
     });
   }, [scenario, fxRate, taxRate]);
+
+  // 5-Year (FY2027-FY2031) 5-Scope Revenue Mix Modeler Projection Series (scaled by disciplined Growth Mode)
+  const fiveYearScopeSeries = useMemo(() => {
+    const startTotalWeight =
+      Object.values(DEFAULT_MIX_WEIGHTS.fy27).reduce((sum, val) => sum + val, 0) || 1;
+    const endTotalWeight =
+      Object.values(mixScopeWeights).reduce((sum, val) => sum + val, 0) || 1;
+    const yearCount = Math.max(modeledSeries.length - 1, 1);
+
+    return modeledSeries.map((row, idx) => {
+      const progress = idx / yearCount;
+      const growthFactor =
+        growthMode === 'aggressive'
+          ? Number(Math.pow(activeGrowthSpec.annualCompoundBase, idx).toFixed(3))
+          : 1.0;
+      const scaledTotalRevK = Number((row.revK * growthFactor).toFixed(1));
+      let weightedGmPct = 0;
+
+      const scopeRevK = {} as Record<RevenueScopeId, number>;
+      const scopeSharePct = {} as Record<RevenueScopeId, number>;
+
+      REVENUE_SCOPES.forEach((scope) => {
+        const startShare = DEFAULT_MIX_WEIGHTS.fy27[scope.id] / startTotalWeight;
+        const endShare = mixScopeWeights[scope.id] / endTotalWeight;
+        const interpolatedShare = startShare + (endShare - startShare) * progress;
+        const sharePct = Number((interpolatedShare * 100).toFixed(1));
+        const revK = Number((scaledTotalRevK * interpolatedShare).toFixed(1));
+
+        scopeSharePct[scope.id] = sharePct;
+        scopeRevK[scope.id] = revK;
+        weightedGmPct += interpolatedShare * scope.grossMarginPct;
+      });
+
+      return {
+        year: row.year,
+        label: row.label,
+        growthFactor,
+        totalRevK: scaledTotalRevK,
+        weightedGmPct: Number(weightedGmPct.toFixed(1)),
+        one_time_builds: scopeRevK.one_time_builds,
+        recurring_saas: scopeRevK.recurring_saas,
+        managed_retainers: scopeRevK.managed_retainers,
+        ip_royalties: scopeRevK.ip_royalties,
+        captive_ecosystem: scopeRevK.captive_ecosystem,
+        one_time_builds_pct: scopeSharePct.one_time_builds,
+        recurring_saas_pct: scopeSharePct.recurring_saas,
+        managed_retainers_pct: scopeSharePct.managed_retainers,
+        ip_royalties_pct: scopeSharePct.ip_royalties,
+        captive_ecosystem_pct: scopeSharePct.captive_ecosystem,
+      };
+    });
+  }, [modeledSeries, mixScopeWeights, growthMode, activeGrowthSpec.annualCompoundBase]);
+
+  const handleExportFiveYearCsv = () => {
+    const headers = [
+      'Fiscal Year',
+      'Period',
+      'Growth Mode',
+      'Disciplined Factor',
+      'Total Revenue ($K)',
+      'One-Time Builds ($K)',
+      'Recurring SaaS ARR ($K)',
+      'Managed Retainers ($K)',
+      '3D & Dataset IP ($K)',
+      'Captive Ecosystem ($K)',
+      'Revenue-Weighted GM (%)',
+      'Target 3-5Yr Annual ROI Band',
+    ];
+    const rows = fiveYearScopeSeries.map((r) => [
+      r.year,
+      r.label,
+      activeGrowthSpec.label,
+      `${r.growthFactor.toFixed(3)}x`,
+      r.totalRevK.toFixed(1),
+      r.one_time_builds.toFixed(1),
+      r.recurring_saas.toFixed(1),
+      r.managed_retainers.toFixed(1),
+      r.ip_royalties.toFixed(1),
+      r.captive_ecosystem.toFixed(1),
+      r.weightedGmPct.toFixed(1),
+      `${activeGrowthSpec.targetRoiMinPct}%-${activeGrowthSpec.targetRoiMaxPct}%`,
+    ]);
+    const csvLines = [headers, ...rows]
+      .map((cols) => cols.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csvLines], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `spenta-5yr-revenue-projections-${growthMode}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setCsvExported(true);
+    window.setTimeout(() => setCsvExported(false), 2200);
+  };
 
   const y1 = modeledSeries[0];
   const y4 = modeledSeries[3];
@@ -639,10 +758,13 @@ export function FinancialsView() {
           initialAppId={roiInitialAppId}
           sharedBenchmark={searchBenchmark}
           onVerifyBenchmarks={handleFetchSearchBenchmarks}
+          growthMode={growthMode}
+          onChangeGrowthMode={setGrowthMode}
           revenueMixProps={{
             activePreset: mixPreset,
             scopeWeights: mixScopeWeights,
             targetOpexRatioPct: mixOpexRatioPct,
+            growthMode,
             onApplyPreset: handleApplyMixPreset,
             onChangeScopeWeight: handleChangeMixScopeWeight,
             onChangeOpexRatio: setMixOpexRatioPct,
@@ -1171,6 +1293,269 @@ export function FinancialsView() {
             </div>
           </div>
         </div>
+
+        {/* 5-Year (FY2027–FY2031) 5-Scope Revenue Mix Projection Line Chart + Disciplined Growth Mode + CSV Export */}
+        <div className="mt-6 pt-5 border-t border-[#E4DFD6] dark:border-[#232B4A]">
+          <div className="mb-4 rounded-xl border border-[#1C6E46]/30 dark:border-[#6FCB9F]/30 bg-[#1C6E46]/[0.05] dark:bg-[#6FCB9F]/[0.06] px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs font-mono font-bold text-[#1C6E46] dark:text-[#6FCB9F]">
+                {ROI_CONFIDENCE_EVIDENCE_NOTE.title} · {activeGrowthSpec.confidenceBadge}
+              </div>
+              <p className="text-xs text-[#334155] dark:text-[#C8D0E4] mt-0.5 leading-relaxed">
+                {activeGrowthSpec.summary} {ROI_CONFIDENCE_EVIDENCE_NOTE.lead}
+              </p>
+            </div>
+            <div
+              role="group"
+              aria-label="5-Year Projection Growth Mode"
+              className="inline-flex rounded-lg bg-white dark:bg-[#0B1020] p-0.5 border border-[#E4DFD6] dark:border-[#232B4A] self-start lg:self-auto shrink-0"
+            >
+              <button
+                type="button"
+                onClick={() => setGrowthMode('conservative')}
+                aria-pressed={growthMode === 'conservative'}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  growthMode === 'conservative'
+                    ? 'bg-[#1F3863] text-white dark:bg-[#8FA6E8] dark:text-[#0B1020]'
+                    : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+                }`}
+              >
+                Conservative (25% Floor)
+              </button>
+              <button
+                type="button"
+                onClick={() => setGrowthMode('aggressive')}
+                aria-pressed={growthMode === 'aggressive'}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  growthMode === 'aggressive'
+                    ? 'bg-[#1C6E46] text-white dark:bg-[#6FCB9F] dark:text-[#0B1020]'
+                    : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+                }`}
+              >
+                Aggressive Growth (35% Cap)
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+            <div>
+              <div className="text-xs font-mono text-[#1C6E46] dark:text-[#6FCB9F] font-semibold">
+                5-Year Scope Trajectory · FY2027–FY2031 ({scenario === 'conservative' ? 'Conservative Base' : 'Healthcare Upside'} · {activeGrowthSpec.shortLabel})
+              </div>
+              <h3 className="text-sm sm:text-base font-bold text-[#16213A] dark:text-[#E7EBF5] mt-0.5">
+                {scopeLineMetric === 'revenue'
+                  ? 'Projected Revenue by Scope ($K USD, FY2027–FY2031)'
+                  : 'Revenue Mix Transition (%) & Revenue-Weighted GM Bridge (FY2027–FY2031)'}
+              </h3>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 self-start md:self-auto shrink-0">
+              <div className="inline-flex rounded-lg bg-[#F2EFE9] dark:bg-[#0F1529] p-0.5 border border-[#E4DFD6] dark:border-[#232B4A]">
+                <button
+                  type="button"
+                  onClick={() => setScopeLineMetric('revenue')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    scopeLineMetric === 'revenue'
+                      ? 'bg-[#1F3863] text-white dark:bg-[#8FA6E8] dark:text-[#0B1020]'
+                      : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+                  }`}
+                >
+                  Revenue ($K)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScopeLineMetric('share')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    scopeLineMetric === 'share'
+                      ? 'bg-[#1F3863] text-white dark:bg-[#8FA6E8] dark:text-[#0B1020]'
+                      : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+                  }`}
+                >
+                  Mix Share (%)
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleExportFiveYearCsv}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#1C6E46]/40 dark:border-[#6FCB9F]/40 bg-[#1C6E46]/10 dark:bg-[#6FCB9F]/15 text-[#1C6E46] dark:text-[#6FCB9F] hover:bg-[#1C6E46]/20 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                {csvExported ? <Check className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
+                <span>{csvExported ? 'CSV Exported' : 'Export CSV'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Interactive Scope Series Filter Controls */}
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            {REVENUE_SCOPES.map((scope) => {
+              const hidden = hiddenScopeLines.includes(scope.id);
+              const strokeColor =
+                scope.id === 'one_time_builds' && isDark ? '#8FA6E8' : scope.accent;
+              return (
+                <button
+                  key={scope.id}
+                  type="button"
+                  onClick={() => toggleScopeLineVisibility(scope.id)}
+                  aria-pressed={!hidden}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    hidden
+                      ? 'bg-transparent border-[#E4DFD6] dark:border-[#232B4A] text-[#94A3B8] dark:text-[#64748B] line-through'
+                      : 'bg-[#FAF8F4] dark:bg-[#0F1529] border-[#E4DFD6] dark:border-[#232B4A] text-[#16213A] dark:text-[#E7EBF5]'
+                  }`}
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-sm shrink-0"
+                    style={{ backgroundColor: strokeColor, opacity: hidden ? 0.35 : 1 }}
+                    aria-hidden="true"
+                  />
+                  <span>{scope.shortName}</span>
+                </button>
+              );
+            })}
+            {hiddenScopeLines.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setHiddenScopeLines([])}
+                className="px-2 py-1 text-[11px] font-mono text-[#1C6E46] dark:text-[#6FCB9F] hover:underline whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                Show all 5 scopes
+              </button>
+            )}
+          </div>
+
+          <div className="h-[260px] sm:h-[310px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={fiveYearScopeSeries}
+                margin={{ top: 10, right: 16, left: 4, bottom: 8 }}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke={isDark ? '#232B4A' : '#E4DFD6'}
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="year"
+                  tick={{
+                    fontSize: 11,
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fill: isDark ? '#8E96B0' : '#5F6576',
+                  }}
+                  axisLine={{ stroke: isDark ? '#232B4A' : '#E4DFD6' }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tickFormatter={(v) =>
+                    scopeLineMetric === 'revenue'
+                      ? `$${v >= 1000 ? `${(v / 1000).toFixed(1)}M` : `${v}K`}`
+                      : `${v}%`
+                  }
+                  domain={scopeLineMetric === 'share' ? [0, 70] : ['auto', 'auto']}
+                  tick={{
+                    fontSize: 11,
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fill: isDark ? '#8E96B0' : '#5F6576',
+                  }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  formatter={(value, name) => {
+                    const num = Number(value ?? 0);
+                    return [
+                      scopeLineMetric === 'revenue'
+                        ? formatCompactUsdK(num)
+                        : `${num.toFixed(1)}%`,
+                      String(name ?? ''),
+                    ];
+                  }}
+                  labelFormatter={(label) => {
+                    const match = fiveYearScopeSeries.find((r) => r.year === String(label));
+                    return match
+                      ? `${match.year} (${match.label}) · Total ${formatCompactUsdK(match.totalRevK)} · Wtd GM ${match.weightedGmPct.toFixed(1)}%`
+                      : String(label);
+                  }}
+                  contentStyle={{
+                    borderRadius: '10px',
+                    backgroundColor: isDark ? '#141A32' : '#FFFFFF',
+                    border: isDark ? '1px solid #232B4A' : '1px solid #E4DFD6',
+                    color: isDark ? '#E7EBF5' : '#16213A',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fontSize: '12px',
+                  }}
+                  itemStyle={{ color: isDark ? '#E7EBF5' : '#16213A' }}
+                />
+                <Legend
+                  wrapperStyle={{
+                    fontSize: '11px',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    color: isDark ? '#8E96B0' : '#5F6576',
+                  }}
+                />
+                {REVENUE_SCOPES.map((scope) => {
+                  if (hiddenScopeLines.includes(scope.id)) return null;
+                  const strokeColor =
+                    scope.id === 'one_time_builds' && isDark ? '#8FA6E8' : scope.accent;
+                  const dataKey =
+                    scopeLineMetric === 'revenue' ? scope.id : `${scope.id}_pct`;
+                  return (
+                    <Line
+                      key={scope.id}
+                      type="monotone"
+                      dataKey={dataKey}
+                      name={scope.shortName}
+                      stroke={strokeColor}
+                      strokeWidth={scope.id === 'recurring_saas' ? 3 : 2.2}
+                      dot={{ r: 3.5, fill: strokeColor }}
+                      activeDot={{ r: 5.5 }}
+                    />
+                  );
+                })}
+                {scopeLineMetric === 'share' && (
+                  <Line
+                    type="monotone"
+                    dataKey="weightedGmPct"
+                    name="Rev-Wtd GM (%)"
+                    stroke={isDark ? '#F5C57B' : '#B45309'}
+                    strokeWidth={2}
+                    strokeDasharray="5 4"
+                    dot={{ r: 3, fill: isDark ? '#F5C57B' : '#B45309' }}
+                  />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-[#EFEBE3] dark:border-[#1E2642] flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-[#5F6576] dark:text-[#8E96B0] tabular-nums">
+            <span>
+              FY2027 SaaS ARR:{' '}
+              <strong className="text-[#16213A] dark:text-[#E7EBF5]">
+                {formatCompactUsdK(fiveYearScopeSeries[0]?.recurring_saas ?? 0)}
+              </strong>{' '}
+              → FY2031:{' '}
+              <strong className="text-[#1C6E46] dark:text-[#6FCB9F]">
+                {formatCompactUsdK(fiveYearScopeSeries[4]?.recurring_saas ?? 0)}
+              </strong>
+            </span>
+            <span>
+              Rev-Wtd GM Bridge:{' '}
+              <strong className="text-[#16213A] dark:text-[#E7EBF5]">
+                {(fiveYearScopeSeries[0]?.weightedGmPct ?? 0).toFixed(1)}%
+              </strong>{' '}
+              →{' '}
+              <strong className="text-[#1C6E46] dark:text-[#6FCB9F]">
+                {(fiveYearScopeSeries[4]?.weightedGmPct ?? 0).toFixed(1)}%
+              </strong>{' '}
+              {(() => {
+                const gmDelta =
+                  (fiveYearScopeSeries[4]?.weightedGmPct ?? 0) -
+                  (fiveYearScopeSeries[0]?.weightedGmPct ?? 0);
+                return `(${gmDelta >= 0 ? '+' : ''}${gmDelta.toFixed(1)} pts)`;
+              })()}
+            </span>
+          </div>
+        </div>
       </section>
 
       {/* Financial & ROI Audit Reconciliation Ledger */}
@@ -1661,6 +2046,76 @@ export function FinancialsView() {
               )}
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Validated Global Peer Comparables & 4-Row Competitive Edge Matrix */}
+      <section className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-5 sm:p-6 space-y-5">
+        <div>
+          <div className="text-xs font-mono text-[#1C6E46] dark:text-[#6FCB9F] font-semibold">
+            Market Validation &amp; Structural Moat · Global Precedents
+          </div>
+          <h2 className="text-base sm:text-lg font-bold text-[#16213A] dark:text-[#E7EBF5] mt-0.5">
+            Validated Global Peer Comparables &amp; 4-Axis Competitive Edge Matrix
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
+          {GLOBAL_PEER_COMPARABLES.map((peer) => (
+            <article
+              key={peer.company}
+              className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] p-4 flex flex-col justify-between gap-2.5"
+            >
+              <div>
+                <div className="text-sm font-bold text-[#16213A] dark:text-[#E7EBF5]">
+                  {peer.company}
+                </div>
+                <div className="text-[11px] font-mono text-[#1C6E46] dark:text-[#6FCB9F] mt-0.5">
+                  {peer.vertical}
+                </div>
+                <p className="text-xs text-[#4A5568] dark:text-[#A4ADC6] mt-2 leading-relaxed">
+                  {peer.traction}
+                </p>
+              </div>
+              <div className="pt-2.5 border-t border-[#E4DFD6] dark:border-[#232B4A] text-[11px] text-[#16213A] dark:text-[#E7EBF5] leading-relaxed">
+                <span className="font-semibold text-[#1F3863] dark:text-[#8FA6E8]">Spenta Edge: </span>
+                {peer.spentaAdvantage}
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <div className="overflow-x-auto pt-2">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-[#E4DFD6] dark:border-[#232B4A] text-[#5F6576] dark:text-[#8E96B0]">
+                <th className="py-2.5 pr-3 font-semibold">Competitive Dimension</th>
+                <th className="py-2.5 px-3 font-semibold">Legacy Enterprise Vendors</th>
+                <th className="py-2.5 px-3 font-semibold">Public Cloud AI Wrappers</th>
+                <th className="py-2.5 pl-3 font-semibold text-[#1C6E46] dark:text-[#6FCB9F]">
+                  Spenta Sovereign OS
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E4DFD6] dark:divide-[#232B4A]">
+              {COMPETITIVE_EDGE_MATRIX.map((row) => (
+                <tr key={row.dimension}>
+                  <td className="py-3 pr-3 font-bold text-[#16213A] dark:text-[#E7EBF5] align-top min-w-[170px]">
+                    {row.dimension}
+                  </td>
+                  <td className="py-3 px-3 text-[#5F6576] dark:text-[#8E96B0] align-top leading-relaxed">
+                    {row.legacyVendors}
+                  </td>
+                  <td className="py-3 px-3 text-[#5F6576] dark:text-[#8E96B0] align-top leading-relaxed">
+                    {row.publicCloudWrappers}
+                  </td>
+                  <td className="py-3 pl-3 font-medium text-[#16213A] dark:text-[#E7EBF5] bg-[#1C6E46]/[0.04] dark:bg-[#6FCB9F]/[0.05] align-top leading-relaxed">
+                    {row.spentaSovereignOs}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
         </>

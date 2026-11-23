@@ -216,6 +216,50 @@ html.dark.spenta-mobile-grid-on .bg-obsidian-grid {
   animation-play-state: paused;
 }
 
+/* Looping Brand Collaboration Slider (pause on hover/focus, reduced-motion safe) */
+@keyframes spenta-brand-loop {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.spenta-brand-slider-mask {
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%);
+}
+
+.spenta-brand-slider-track {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: spenta-brand-loop 46s linear infinite;
+}
+
+.spenta-brand-slider-mask:hover .spenta-brand-slider-track,
+.spenta-brand-slider-mask:focus-within .spenta-brand-slider-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spenta-brand-slider-mask {
+    mask-image: none;
+    -webkit-mask-image: none;
+    overflow: visible;
+  }
+  .spenta-brand-slider-track {
+    animation: none;
+    flex-wrap: wrap;
+    width: auto;
+  }
+  .spenta-brand-slider-duplicate {
+    display: none;
+  }
+}
+
 /* Custom CSS 'Emissive Pulse' Animation for Active & Selected 3D Brain Nodes */
 @keyframes spenta-brain-emissive-pulse {
   0%, 100% {
@@ -374,6 +418,41 @@ html.dark.spenta-mobile-grid-on .bg-obsidian-grid {
 .solar-map-scope input[type="range"]:focus-visible {
   outline: 2px solid var(--solar-accent-blue);
   outline-offset: 2px;
+}
+
+/* Subtle CSS pulse animation on orbital path circles when hovering a planet */
+@keyframes solar-orbit-path-pulse {
+  0%, 100% {
+    opacity: 0.72;
+    transform: scale(1);
+    filter: drop-shadow(0 0 3px var(--solar-orbit-glow, var(--solar-accent-blue)));
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.035);
+    filter: drop-shadow(0 0 10px var(--solar-orbit-glow, var(--solar-accent-blue)));
+  }
+}
+
+.solar-map-scope .solar-orbit-path-circle {
+  transition: opacity 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    stroke-width 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.solar-map-scope .solar-orbit-path-circle--pulsing {
+  animation: solar-orbit-path-pulse 1.9s ease-in-out infinite;
+  will-change: transform, opacity, filter;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .solar-map-scope .solar-orbit-path-circle--pulsing {
+    animation: none;
+    opacity: 1;
+    filter: drop-shadow(0 0 6px var(--solar-orbit-glow, var(--solar-accent-blue)));
+  }
 }
 
 /* Semantic Design Tokens — Alternate Core 3: Nebula Galaxy Particle Theme (Parity with .solar-map-scope) */

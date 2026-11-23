@@ -45,8 +45,9 @@ import {
   DEFAULT_CORE_LAYER_CONFIGS,
   useStack,
 } from '../store/StackContext';
+import { AiSafetyWorkbench } from './AiSafetyWorkbench';
 
-type CoreTab = 'architecture' | 'audit';
+type CoreTab = 'architecture' | 'safety' | 'audit';
 
 const ISOLATION_OPTIONS: CoreIsolationMode[] = [
   'Air-Gapped On-Prem',
@@ -343,7 +344,7 @@ export function SpentaCoreView() {
           </div>
         </div>
 
-        <div className="inline-flex rounded-xl bg-[#F2EFE9] dark:bg-[#0F1529] p-1 border border-[#E4DFD6] dark:border-[#232B4A] self-start lg:self-auto shrink-0">
+        <div className="inline-flex flex-wrap rounded-xl bg-[#F2EFE9] dark:bg-[#0F1529] p-1 border border-[#E4DFD6] dark:border-[#232B4A] self-start lg:self-auto shrink-0">
           <button
             type="button"
             onClick={() => setActiveCoreTab('architecture')}
@@ -355,6 +356,18 @@ export function SpentaCoreView() {
           >
             <Layers className="w-3.5 h-3.5" strokeWidth={1.5} />
             <span>Architecture &amp; Config</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveCoreTab('safety')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+              activeCoreTab === 'safety'
+                ? 'bg-[#1F3863] text-white dark:bg-[#8FA6E8] dark:text-[#0B1020]'
+                : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+            }`}
+          >
+            <Shield className="w-3.5 h-3.5" strokeWidth={1.5} />
+            <span>AI Safety &amp; Pre-Trust</span>
           </button>
           <button
             type="button"
@@ -380,7 +393,9 @@ export function SpentaCoreView() {
         </div>
       </section>
 
-      {activeCoreTab === 'architecture' ? (
+      {activeCoreTab === 'safety' ? (
+        <AiSafetyWorkbench />
+      ) : activeCoreTab === 'architecture' ? (
         <>
           {/* Section 1: Interactive L1-L6 Sovereign Fusion Stack */}
           <section className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-5">
