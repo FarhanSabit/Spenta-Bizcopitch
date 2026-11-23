@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link2, RotateCcw, X } from 'lucide-react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { SPENTA_CONTACT_EMAIL } from './data/spentaManifest';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { StackProvider, useStack } from './store/StackContext';
@@ -119,6 +120,7 @@ function PortalShell() {
       <StackComposerDrawer />
       <MobileGridToggle />
       <SpentaAiAssistant />
+      <SpeedInsights />
     </div>
   );
 }
