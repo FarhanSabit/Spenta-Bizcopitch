@@ -1,10 +1,11 @@
 import express from 'express';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  AssistantPersona,
-  AllowedModel,
-  GroundingMode,
+  type AssistantPersona,
+  type AllowedModel,
+  type GroundingMode,
   runMapsGroundedBrief,
   runSearchGroundedBrief,
   runSpentaChat,
@@ -15,7 +16,9 @@ const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
-const isProd = process.env.NODE_ENV === 'production';
+const isProd =
+  process.env.NODE_ENV === 'production' ||
+  Boolean(process.env.K_SERVICE || process.env.CLOUD_RUN_JOB);
 
 async function startServer() {
   const app = express();
@@ -127,19 +130,31 @@ async function startServer() {
     }
   });
 
-  if (!isProd) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false, ws: false },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distDir = path.join(__dirname, 'dist');
+  const distDir = path.join(__dirname, 'dist');
+  const serveStatic = () => {
     app.use(express.static(distDir));
     app.use((_req, res) => {
       res.sendFile(path.join(distDir, 'index.html'));
     });
+  };
+
+  if (!isProd) {
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true, hmr: false, ws: false },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } catch (viteErr) {
+      if (fs.existsSync(path.join(distDir, 'index.html'))) {
+        serveStatic();
+      } else {
+        throw viteErr;
+      }
+    }
+  } else {
+    serveStatic();
   }
 
   app.listen(PORT, HOST, () => {

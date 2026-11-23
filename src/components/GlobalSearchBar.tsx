@@ -221,6 +221,7 @@ export function GlobalSearchBar() {
   const [searchFrequencies, setSearchFrequencies] =
     useState<Record<string, SearchFrequencyEntry>>(loadSearchFrequencies);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const recordedCurrentQueryRef = useRef<string | null>(null);
 
   const persistRecentQueries = (next: string[]) => {
@@ -593,7 +594,8 @@ export function GlobalSearchBar() {
 
   useEffect(() => {
     if (commandPaletteOpen) {
-      window.setTimeout(() => inputRef.current?.focus(), 20);
+      setIsInputFocused(true);
+      window.requestAnimationFrame(() => inputRef.current?.focus());
     } else {
       setIsInputFocused(false);
       setQuery('');
@@ -684,6 +686,7 @@ export function GlobalSearchBar() {
     >
       <div
         id="global-search-bar-container"
+        ref={containerRef}
         onClick={(e) => e.stopPropagation()}
         className="w-full md:w-1/2 min-w-[50vw] bg-[#FAF8F4] dark:bg-[#141A32] text-[#16213A] dark:text-[#E7EBF5] rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] shadow-2xl overflow-hidden"
       >
@@ -696,7 +699,12 @@ export function GlobalSearchBar() {
             type="text"
             value={query}
             onFocus={() => setIsInputFocused(true)}
-            onBlur={() => setIsInputFocused(false)}
+            onBlur={(e) => {
+              const nextFocus = e.relatedTarget as Node | null;
+              if (!nextFocus || !containerRef.current?.contains(nextFocus)) {
+                setIsInputFocused(false);
+              }
+            }}
             onChange={(e) => {
               recordedCurrentQueryRef.current = null;
               setQuery(e.target.value);

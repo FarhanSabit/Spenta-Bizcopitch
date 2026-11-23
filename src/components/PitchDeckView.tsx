@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   Check,
   ChevronLeft,
@@ -6,6 +8,7 @@ import {
   Download,
   FileText,
   Grid3x3,
+  Info,
   Keyboard,
   Loader2,
   Presentation,
@@ -14,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { PITCH_DECK_SLIDES, PitchSlide, SERVER_TIERS } from '../data/spentaManifest';
+import { getKpiDefinition } from '../data/pitchKpiDefinitions';
 import {
   AI_SAFETY_CLIMATE_SLIDES,
   CORE_LEADERSHIP_TEAM,
@@ -87,6 +91,53 @@ export function PitchDeckView() {
   const [pdfProgress, setPdfProgress] = useState<string>('');
   const [blobPdfState, setBlobPdfState] = useState<'idle' | 'exporting' | 'done'>('idle');
   const [blobPdfProgress, setBlobPdfProgress] = useState<string>('');
+  const [hoveredMetric, setHoveredMetric] = useState<{
+    label: string;
+    value: string;
+    category: string;
+    definition: string;
+    benchmark?: string;
+    accent?: 'emerald' | 'teal' | 'amber' | 'crimson';
+    rect: { left: number; top: number; width: number; height: number; bottom: number };
+    darkSurface: boolean;
+  } | null>(null);
+
+  const showMetricTooltip = useCallback(
+    (
+      target: HTMLElement,
+      label: string,
+      value: string,
+      accent?: 'emerald' | 'teal' | 'amber' | 'crimson',
+      darkSurface = false,
+      customCategory?: string,
+      customDefinition?: string,
+      customBenchmark?: string,
+    ) => {
+      const r = target.getBoundingClientRect();
+      const meta = getKpiDefinition(label, value);
+      setHoveredMetric({
+        label,
+        value,
+        category: customCategory ?? meta.category,
+        definition: customDefinition ?? meta.definition,
+        benchmark: customBenchmark ?? meta.benchmark,
+        accent,
+        rect: {
+          left: r.left,
+          top: r.top,
+          width: r.width,
+          height: r.height,
+          bottom: r.bottom,
+        },
+        darkSurface,
+      });
+    },
+    [],
+  );
+
+  const hideMetricTooltip = useCallback(() => {
+    setHoveredMetric(null);
+  }, []);
 
   const total = activeSlides.length;
   const safeDisplayedIdx = Math.min(displayedIdx, total - 1);
@@ -94,6 +145,16 @@ export function PitchDeckView() {
   const slide = activeSlides[safeDisplayedIdx];
   const activeSlide = activeSlides[safeSlideIdx];
   const isDarkSlide = slide.theme === 'dark';
+
+  useEffect(() => {
+    setHoveredMetric(null);
+  }, [activeTrack, displayedIdx]);
+
+  useEffect(() => {
+    const clearOnScroll = () => setHoveredMetric(null);
+    window.addEventListener('scroll', clearOnScroll, { passive: true });
+    return () => window.removeEventListener('scroll', clearOnScroll);
+  }, []);
 
   const handleSelectTrack = (trackId: PitchDeckTrackId) => {
     if (trackId === activeTrack) return;
@@ -309,7 +370,7 @@ export function PitchDeckView() {
 
     window.addEventListener('afterprint', cleanup, { once: true });
     window.print();
-    window.setTimeout(cleanup, 1200);
+    window.setTimeout(cleanup, 4000);
   };
 
   const kpiAccentClass = (accent?: 'emerald' | 'teal' | 'amber' | 'crimson') => {
@@ -430,11 +491,11 @@ export function PitchDeckView() {
           <button
             type="button"
             onClick={handlePrintPitchDeck}
-            className="inline-flex items-center gap-1.5 min-h-[38px] px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] hover:border-[#1F3863]/50 dark:hover:border-[#8FA6E8]/50 text-[#16213A] dark:text-[#E7EBF5] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            title="Print full 18-slide .pitch-deck-print-deck to PDF via browser print dialog"
+            className="inline-flex items-center gap-1.5 min-h-[38px] px-3.5 py-1.5 rounded-lg text-xs font-semibold border border-[#1F3863]/30 dark:border-[#8FA6E8]/35 bg-[#FAF8F4] dark:bg-[#0F1529] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] hover:bg-[#F2EFE9] dark:hover:bg-[#1C2545] text-[#16213A] dark:text-[#E7EBF5] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            title="Open browser print dialog using .pitch-deck-print-deck branded layout"
           >
-            <Printer className="w-3.5 h-3.5" strokeWidth={1.5} />
-            <span>Print</span>
+            <Printer className="w-3.5 h-3.5 text-[#1F3863] dark:text-[#8FA6E8]" strokeWidth={1.65} />
+            <span>Download Pitch Deck PDF</span>
           </button>
 
           <button
@@ -585,18 +646,36 @@ export function PitchDeckView() {
                   {slide.kpis.map((kpi) => (
                     <div
                       key={kpi.label}
-                      className={`rounded-xl p-3 sm:p-3.5 border ${
+                      tabIndex={0}
+                      onMouseEnter={(e) =>
+                        showMetricTooltip(e.currentTarget, kpi.label, kpi.value, kpi.accent, isDarkSlide)
+                      }
+                      onMouseLeave={hideMetricTooltip}
+                      onFocus={(e) =>
+                        showMetricTooltip(e.currentTarget, kpi.label, kpi.value, kpi.accent, isDarkSlide)
+                      }
+                      onBlur={hideMetricTooltip}
+                      aria-label={`${kpi.label}: ${kpi.value}. Hover or focus for metric definition.`}
+                      className={`group rounded-xl p-3 sm:p-3.5 border transition-colors cursor-help focus:outline-none ${
                         isDarkSlide
-                          ? 'bg-[#141A32] border-[#232B4A]'
-                          : 'bg-[#FAF8F4] border-[#E4DFD6]'
+                          ? 'bg-[#141A32] border-[#232B4A] hover:border-[#6FCB9F]/60 focus:border-[#6FCB9F]'
+                          : 'bg-[#FAF8F4] border-[#E4DFD6] hover:border-[#1C6E46]/55 focus:border-[#1C6E46]'
                       }`}
                     >
-                      <div
-                        className={`text-[10px] font-mono uppercase tracking-wider ${
-                          isDarkSlide ? 'text-[#8E96B0]' : 'text-[#5F6576]'
-                        }`}
-                      >
-                        {kpi.label}
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div
+                          className={`text-[10px] font-mono uppercase tracking-wider truncate ${
+                            isDarkSlide ? 'text-[#8E96B0]' : 'text-[#5F6576]'
+                          }`}
+                        >
+                          {kpi.label}
+                        </div>
+                        <Info
+                          className={`w-3 h-3 shrink-0 opacity-60 group-hover:opacity-100 transition-opacity ${
+                            isDarkSlide ? 'text-[#8E96B0] group-hover:text-[#6FCB9F]' : 'text-[#7B8294] group-hover:text-[#1C6E46]'
+                          }`}
+                          strokeWidth={1.65}
+                        />
                       </div>
                       <div
                         className={`font-mono text-base sm:text-xl font-extrabold mt-0.5 tabular-nums ${kpiAccentClass(
@@ -723,9 +802,33 @@ export function PitchDeckView() {
               Use of Funds (45/30/15/10), Verified Leadership &amp; Q&amp;A Credibility Shield
             </h2>
           </div>
-          <span className="text-xs font-mono text-[#5F6576] dark:text-[#8E96B0] tabular-nums shrink-0">
-            11.11% Pre-Dilution Cap · 20% Discount
-          </span>
+          <button
+            type="button"
+            onMouseEnter={(e) =>
+              showMetricTooltip(
+                e.currentTarget,
+                'SAFE Cap & Discount',
+                '11.11% Cap · 20% Disc.',
+                'emerald',
+                false,
+              )
+            }
+            onMouseLeave={hideMetricTooltip}
+            onFocus={(e) =>
+              showMetricTooltip(
+                e.currentTarget,
+                'SAFE Cap & Discount',
+                '11.11% Cap · 20% Disc.',
+                'emerald',
+                false,
+              )
+            }
+            onBlur={hideMetricTooltip}
+            className="inline-flex items-center gap-1.5 text-xs font-mono text-[#5F6576] dark:text-[#8E96B0] hover:text-[#1C6E46] dark:hover:text-[#6FCB9F] tabular-nums shrink-0 cursor-help focus:outline-none"
+          >
+            <span>11.11% Pre-Dilution Cap · 20% Discount</span>
+            <Info className="w-3.5 h-3.5 opacity-70" strokeWidth={1.6} />
+          </button>
         </div>
 
         {/* Canonical 45/30/15/10 Use of Funds Split */}
@@ -738,14 +841,36 @@ export function PitchDeckView() {
           ].map((bucket) => (
             <div
               key={bucket.label}
-              className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] p-3.5"
+              tabIndex={0}
+              onMouseEnter={(e) =>
+                showMetricTooltip(
+                  e.currentTarget,
+                  bucket.label,
+                  `${bucket.pct} (${bucket.usd})`,
+                  'emerald',
+                  false,
+                )
+              }
+              onMouseLeave={hideMetricTooltip}
+              onFocus={(e) =>
+                showMetricTooltip(
+                  e.currentTarget,
+                  bucket.label,
+                  `${bucket.pct} (${bucket.usd})`,
+                  'emerald',
+                  false,
+                )
+              }
+              onBlur={hideMetricTooltip}
+              className="group rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1C6E46]/55 dark:hover:border-[#6FCB9F]/55 bg-[#FAF8F4] dark:bg-[#0F1529] p-3.5 transition-colors cursor-help focus:outline-none"
             >
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-mono text-lg font-extrabold text-[#1C6E46] dark:text-[#6FCB9F] tabular-nums">
                   {bucket.pct}
                 </span>
-                <span className="font-mono text-xs font-semibold text-[#1F3863] dark:text-[#8FA6E8] tabular-nums">
-                  {bucket.usd}
+                <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-[#1F3863] dark:text-[#8FA6E8] tabular-nums">
+                  <span>{bucket.usd}</span>
+                  <Info className="w-3 h-3 opacity-55 group-hover:opacity-100" strokeWidth={1.6} />
                 </span>
               </div>
               <div className="text-xs font-bold text-[#16213A] dark:text-[#E7EBF5] mt-1">
@@ -767,15 +892,48 @@ export function PitchDeckView() {
             {CORE_LEADERSHIP_TEAM.map((leader) => (
               <div
                 key={leader.id}
-                className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] p-3.5 flex flex-col gap-1.5"
+                tabIndex={0}
+                onMouseEnter={(e) =>
+                  showMetricTooltip(
+                    e.currentTarget,
+                    leader.name,
+                    leader.role,
+                    'teal',
+                    false,
+                    leader.location,
+                    leader.credentials,
+                    leader.focus,
+                  )
+                }
+                onMouseLeave={hideMetricTooltip}
+                onFocus={(e) =>
+                  showMetricTooltip(
+                    e.currentTarget,
+                    leader.name,
+                    leader.role,
+                    'teal',
+                    false,
+                    leader.location,
+                    leader.credentials,
+                    leader.focus,
+                  )
+                }
+                onBlur={hideMetricTooltip}
+                className="group rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1C6E46]/55 dark:hover:border-[#6FCB9F]/55 bg-[#FAF8F4] dark:bg-[#0F1529] p-3.5 flex flex-col gap-1.5 transition-colors cursor-help focus:outline-none"
               >
                 <div className="flex items-center gap-2.5">
                   <span className="w-8 h-8 rounded-lg bg-[#1F3863] dark:bg-[#8FA6E8] text-white dark:text-[#0B1020] font-mono text-xs font-bold flex items-center justify-center shrink-0">
                     {leader.initials}
                   </span>
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold text-[#16213A] dark:text-[#E7EBF5] truncate">
-                      {leader.name}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="text-xs font-bold text-[#16213A] dark:text-[#E7EBF5] truncate">
+                        {leader.name}
+                      </div>
+                      <Info
+                        className="w-3 h-3 shrink-0 opacity-50 group-hover:opacity-100 text-[#1C6E46] dark:text-[#6FCB9F]"
+                        strokeWidth={1.6}
+                      />
                     </div>
                     <div className="text-[11px] text-[#1C6E46] dark:text-[#6FCB9F] truncate">
                       {leader.role}
@@ -1128,8 +1286,8 @@ export function PitchDeckView() {
           title="Open browser print dialog targeting .pitch-deck-print-deck"
         >
           <Printer className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
-          <span className="sm:hidden">Print</span>
-          <span className="hidden sm:inline">Print Pitch Deck</span>
+          <span className="sm:hidden">Print PDF</span>
+          <span className="hidden sm:inline">Download Pitch Deck PDF</span>
         </button>
 
         <button
@@ -1155,6 +1313,70 @@ export function PitchDeckView() {
           </span>
         </button>
       </div>
+
+      {/* Framer Motion Portal Tooltip for Slide KPIs & Quantitative Data Points */}
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <AnimatePresence>
+            {hoveredMetric &&
+              (() => {
+                const vw = window.innerWidth;
+                const vh = window.innerHeight;
+                const tipW = Math.min(320, vw - 24);
+                const estH = 148;
+                const rawLeft =
+                  hoveredMetric.rect.left + hoveredMetric.rect.width / 2 - tipW / 2;
+                const left = Math.max(12, Math.min(vw - tipW - 12, rawLeft));
+                const showAbove = hoveredMetric.rect.bottom + estH + 16 > vh;
+                const top = showAbove
+                  ? Math.max(12, hoveredMetric.rect.top - estH - 10)
+                  : hoveredMetric.rect.bottom + 10;
+                const tooltipDark =
+                  hoveredMetric.darkSurface ||
+                  document.documentElement.classList.contains('dark');
+
+                return (
+                  <motion.div
+                    key={`${hoveredMetric.label}-${hoveredMetric.value}`}
+                    role="tooltip"
+                    initial={{ opacity: 0, y: showAbove ? 6 : -6, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: showAbove ? 4 : -4, scale: 0.96 }}
+                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                    style={{ left, top, width: tipW }}
+                    className={`fixed z-[85] pointer-events-none no-print rounded-xl border p-3.5 backdrop-blur-md shadow-2xl ${
+                      tooltipDark
+                        ? 'bg-[#0F1529]/95 border-[#34416E] text-[#E7EBF5]'
+                        : 'bg-[#FAF8F4]/95 border-[#CFC8BC] text-[#16213A]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-current/10">
+                      <span
+                        className={`font-mono text-[10px] font-semibold uppercase tracking-wider ${
+                          tooltipDark ? 'text-[#6FCB9F]' : 'text-[#1C6E46]'
+                        }`}
+                      >
+                        {hoveredMetric.category}
+                      </span>
+                      <span className="font-mono text-[11px] font-bold tabular-nums">
+                        {hoveredMetric.value}
+                      </span>
+                    </div>
+                    <div className="text-xs font-bold mt-2">{hoveredMetric.label}</div>
+                    <p className="text-[11px] leading-relaxed opacity-85 mt-1">
+                      {hoveredMetric.definition}
+                    </p>
+                    {hoveredMetric.benchmark && (
+                      <div className="mt-2 pt-1.5 border-t border-current/10 font-mono text-[10px] opacity-75">
+                        {hoveredMetric.benchmark}
+                      </div>
+                    )}
+                  </motion.div>
+                );
+              })()}
+          </AnimatePresence>,
+          document.body,
+        )}
     </div>
   );
 }
