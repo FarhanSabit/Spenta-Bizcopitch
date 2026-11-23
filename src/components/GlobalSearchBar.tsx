@@ -5,6 +5,7 @@ import {
   Building2,
   Check,
   Cpu,
+  History,
   Image,
   Layers,
   Moon,
@@ -13,6 +14,7 @@ import {
   Search,
   Sparkles,
   Sun,
+  TrendingUp,
   X,
 } from 'lucide-react';
 import {
@@ -76,9 +78,128 @@ const INFOGRAPHIC_INDEX: { id: string; title: string; subtitle: string; keywords
     id: 'financial-edge',
     title: 'Plate 04: FY2027–FY2031 Financial Trajectory & Dual-Shore Edge',
     subtitle: '$672K to $5.85M scale · 6.38× Cap. Eff. / 4.16×–6.24× SAFE ROI · $12.98/hr loaded Dhaka hub',
-    keywords: 'infographic plate 04 financial trajectory dual shore dhaka safe roi',
+    keywords: 'infographic plate 04 financial trajectory dual shore dhaka safe roi fy2027 projections forecast',
   },
 ];
+
+const POPULAR_SEARCH_TOPICS: { label: string; hint: string }[] = [
+  { label: 'FY2027 Projections', hint: '5-Yr P&L' },
+  { label: 'Spatial XR Portfolio', hint: '76.3% GM' },
+  { label: 'AI Safety Protocols', hint: '0.88 HITL' },
+  { label: 'SAFE Round Terms', hint: '$4.5M Cap' },
+  { label: 'Healthcare ERP', hint: '$45/bed/mo' },
+];
+
+const RECENT_SEARCHES_STORAGE_KEY = 'spenta_recent_search_queries_v1';
+const SEARCH_FREQUENCY_STORAGE_KEY = 'spenta_search_frequency_v1';
+const MAX_RECENT_QUERIES = 5;
+const MAX_TRENDING_QUERIES = 5;
+
+interface SearchFrequencyEntry {
+  query: string;
+  count: number;
+  lastSearchedAt: number;
+}
+
+const DEFAULT_TRENDING_SEARCHES: Record<string, SearchFrequencyEntry> = {
+  'safe roi': { query: 'SAFE ROI', count: 5, lastSearchedAt: 5 },
+  'fy2027 projections': { query: 'FY2027 Projections', count: 4, lastSearchedAt: 4 },
+  'samsung biologics': { query: 'Samsung Biologics', count: 3, lastSearchedAt: 3 },
+  'spatial xr portfolio': { query: 'Spatial XR Portfolio', count: 2, lastSearchedAt: 2 },
+  '0.88 hitl': { query: '0.88 HITL', count: 1, lastSearchedAt: 1 },
+};
+
+function normalizeForMatch(value: string): string {
+  return value.toLowerCase().replace(/[–—]/g, '-');
+}
+
+function escapeRegexToken(token: string): string {
+  return token
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/[-–—]/g, '[-–—]');
+}
+
+function HighlightText({ text, tokens }: { text: string; tokens: string[] }) {
+  if (!tokens.length || !text) return <>{text}</>;
+  const uniqueEscaped = Array.from(new Set(tokens.map(escapeRegexToken).filter(Boolean))).sort(
+    (a, b) => b.length - a.length,
+  );
+  if (!uniqueEscaped.length) return <>{text}</>;
+
+  const regex = new RegExp(`(${uniqueEscaped.join('|')})`, 'gi');
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(regex)) {
+    const start = match.index ?? 0;
+    if (start > lastIndex) {
+      parts.push(text.slice(lastIndex, start));
+    }
+    if (match[0]) {
+      parts.push(
+        <mark
+          key={`${start}-${match[0]}`}
+          className="bg-[#1C6E46]/18 dark:bg-[#6FCB9F]/22 text-[#124E31] dark:text-[#9BE8C2] rounded-[2px] px-0.5 font-semibold"
+        >
+          {match[0]}
+        </mark>,
+      );
+    }
+    lastIndex = start + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts.length > 0 ? <>{parts}</> : <>{text}</>;
+}
+
+function loadRecentQueries(): string[] {
+  try {
+    const raw = window.localStorage.getItem(RECENT_SEARCHES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      .slice(0, MAX_RECENT_QUERIES);
+  } catch {
+    return [];
+  }
+}
+
+function loadSearchFrequencies(): Record<string, SearchFrequencyEntry> {
+  try {
+    const raw = window.localStorage.getItem(SEARCH_FREQUENCY_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_TRENDING_SEARCHES };
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { ...DEFAULT_TRENDING_SEARCHES };
+    }
+    const sanitized: Record<string, SearchFrequencyEntry> = {};
+    for (const [key, val] of Object.entries(parsed)) {
+      if (
+        val &&
+        typeof val === 'object' &&
+        typeof (val as SearchFrequencyEntry).query === 'string' &&
+        (val as SearchFrequencyEntry).query.trim().length > 0 &&
+        typeof (val as SearchFrequencyEntry).count === 'number' &&
+        (val as SearchFrequencyEntry).count > 0
+      ) {
+        const entry = val as SearchFrequencyEntry;
+        sanitized[key] = {
+          query: entry.query.trim(),
+          count: Math.floor(entry.count),
+          lastSearchedAt: typeof entry.lastSearchedAt === 'number' ? entry.lastSearchedAt : 0,
+        };
+      }
+    }
+    return sanitized;
+  } catch {
+    return { ...DEFAULT_TRENDING_SEARCHES };
+  }
+}
 
 export function GlobalSearchBar() {
   const {
@@ -95,7 +216,82 @@ export function GlobalSearchBar() {
 
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [recentQueries, setRecentQueries] = useState<string[]>(loadRecentQueries);
+  const [searchFrequencies, setSearchFrequencies] =
+    useState<Record<string, SearchFrequencyEntry>>(loadSearchFrequencies);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const recordedCurrentQueryRef = useRef<string | null>(null);
+
+  const persistRecentQueries = (next: string[]) => {
+    setRecentQueries(next);
+    try {
+      window.localStorage.setItem(RECENT_SEARCHES_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const persistSearchFrequencies = (next: Record<string, SearchFrequencyEntry>) => {
+    setSearchFrequencies(next);
+    try {
+      window.localStorage.setItem(SEARCH_FREQUENCY_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const recordSearchQuery = (rawQuery: string, forceIncrement = false) => {
+    const cleaned = rawQuery.trim();
+    if (!cleaned) return;
+    const normalizedKey = cleaned.toLowerCase();
+
+    const nextRecent = [
+      cleaned,
+      ...recentQueries.filter((q) => q.toLowerCase() !== normalizedKey),
+    ].slice(0, MAX_RECENT_QUERIES);
+    persistRecentQueries(nextRecent);
+
+    if (!forceIncrement && recordedCurrentQueryRef.current === normalizedKey) {
+      return;
+    }
+    recordedCurrentQueryRef.current = normalizedKey;
+
+    const existing = searchFrequencies[normalizedKey];
+    const nextFrequencies: Record<string, SearchFrequencyEntry> = {
+      ...searchFrequencies,
+      [normalizedKey]: {
+        query: cleaned,
+        count: (existing?.count ?? 0) + 1,
+        lastSearchedAt: Date.now(),
+      },
+    };
+    persistSearchFrequencies(nextFrequencies);
+  };
+
+  const removeRecentQuery = (target: string) => {
+    const next = recentQueries.filter((q) => q !== target);
+    persistRecentQueries(next);
+  };
+
+  useEffect(() => {
+    const onStorageSync = (e: StorageEvent) => {
+      if (e.key === RECENT_SEARCHES_STORAGE_KEY) {
+        setRecentQueries(loadRecentQueries());
+      } else if (e.key === SEARCH_FREQUENCY_STORAGE_KEY) {
+        setSearchFrequencies(loadSearchFrequencies());
+      }
+    };
+    window.addEventListener('storage', onStorageSync);
+    return () => window.removeEventListener('storage', onStorageSync);
+  }, []);
+
+  const trendingSearches = useMemo<SearchFrequencyEntry[]>(() => {
+    return Object.values(searchFrequencies)
+      .filter((entry) => entry.count > 0 && entry.query.trim().length > 0)
+      .sort((a, b) => b.count - a.count || b.lastSearchedAt - a.lastSearchedAt)
+      .slice(0, MAX_TRENDING_QUERIES);
+  }, [searchFrequencies]);
 
   const index = useMemo<SearchEntry[]>(() => {
     const items: SearchEntry[] = [];
@@ -122,13 +318,21 @@ export function GlobalSearchBar() {
       'Pitch Deck': '18-Slide Master Investor Presentation with 16:9 PDF export',
       Resources: 'Governed Case Studies, Compliance Readiness & Proposal Builder',
     };
+    const extraSectionKeywords: Partial<Record<NavTab, string>> = {
+      'App Vault': 'spatial xr portfolio catalog 13 modules showreel',
+      Financials: 'fy2027 projections forecast safe round terms valuation cap roi',
+      'Spenta Core': 'ai safety protocols governance tee opa',
+      'The Brain': 'ai safety protocols hitl gate guardrails governance',
+      'Pitch Deck': 'fy2027 projections safe round terms spatial xr portfolio',
+      Resources: 'ai safety protocols compliance security audit',
+    };
     NAV_TABS.forEach((tab) => {
       items.push({
         id: `sec-${tab}`,
         kind: 'Section',
         title: tab,
         subtitle: sectionDescs[tab],
-        keywords: `${tab} ${sectionDescs[tab]} section tab page`,
+        keywords: `${tab} ${sectionDescs[tab]} ${extraSectionKeywords[tab] ?? ''} section tab page`,
         tab,
       });
     });
@@ -145,16 +349,30 @@ export function GlobalSearchBar() {
 
     // 13 Composable Apps
     SPENTA_APPS.forEach((app) => {
+      const portfolioTag = app.engine.toLowerCase().includes('experience') || app.id === 'spatial-xr'
+        ? 'portfolio spatial xr 3d showreel'
+        : '';
       items.push({
         id: `app-${app.id}`,
         kind: 'App',
         title: app.name,
         subtitle: `${app.setupLabel} · ${app.gmPct.toFixed(1)}% GM · ${app.proofClient}`,
-        keywords: `${app.name} ${app.shortName} ${app.tagline} ${app.category} ${app.proofClient} ${app.engine} ${app.deployment.join(' ')}`,
+        keywords: `${app.name} ${app.shortName} ${app.tagline} ${app.category} ${app.proofClient} ${app.engine} ${app.deployment.join(' ')} ${portfolioTag}`,
         tab: 'App Vault',
         focus: { type: 'app', id: app.id },
         appId: app.id,
       });
+    });
+
+    // Interactive Chaptered 1080p Showreel Studio
+    items.push({
+      id: 'vault-showreel-studio',
+      kind: 'Section',
+      title: 'Interactive Chaptered 1080p Showreel Studio',
+      subtitle: '9 clickable chapters · Spatial XR Portfolio, Samsung Biologics & Solar System VR',
+      keywords: 'showreel studio video spatial xr portfolio 3d chapters samsung biologics',
+      tab: 'App Vault',
+      focus: { type: 'showreel', id: 'showreel-studio' },
     });
 
     // 4 Infographics Plates
@@ -177,7 +395,7 @@ export function GlobalSearchBar() {
         kind: 'Core Layer',
         title: `${layer.id}: ${layer.title}`,
         subtitle: layer.subtitle,
-        keywords: `${layer.id} ${layer.title} ${layer.subtitle} ${layer.protocols.join(' ')} ${layer.slaMetric} audit`,
+        keywords: `${layer.id} ${layer.title} ${layer.subtitle} ${layer.protocols.join(' ')} ${layer.slaMetric} ai safety protocols governance audit`,
         tab: 'Spenta Core',
         focus: { type: 'layer', id: layer.id },
       });
@@ -199,12 +417,14 @@ export function GlobalSearchBar() {
 
     // 18 Pitch Deck Slides
     PITCH_DECK_SLIDES.forEach((slide) => {
+      const kpiText = (slide.kpis ?? []).map((k) => `${k.label} ${k.value}`).join(' ');
+      const bulletText = (slide.bullets ?? []).join(' ');
       items.push({
         id: `slide-${slide.num}`,
         kind: 'Pitch Slide',
         title: `Slide ${String(slide.num).padStart(2, '0')}: ${slide.title}`,
         subtitle: `${slide.section} · ${slide.subtitle}`,
-        keywords: `slide ${slide.num} ${slide.section} ${slide.title} ${slide.subtitle} pitch deck investor pdf`,
+        keywords: `slide ${slide.num} ${slide.section} ${slide.title} ${slide.subtitle} ${kpiText} ${bulletText} projections portfolio ai safety protocols safe round terms pitch deck investor pdf`,
         tab: 'Pitch Deck',
         focus: { type: 'slide', id: String(slide.num) },
       });
@@ -286,8 +506,15 @@ export function GlobalSearchBar() {
     return items;
   }, [theme, toggleTheme]);
 
+  const searchTokens = useMemo(() => {
+    const q = query.trim();
+    if (!q) return [];
+    const words = q.split(/\s+/).filter(Boolean);
+    return Array.from(new Set(words.length > 1 ? [q, ...words] : words));
+  }, [query]);
+
   const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizeForMatch(query.trim());
     if (!q) {
       return [
         ...index.filter((i) => i.kind === 'Recipe'),
@@ -299,9 +526,9 @@ export function GlobalSearchBar() {
     const tokens = q.split(/\s+/).filter(Boolean);
     return index
       .map((item) => {
-        const hay = `${item.title} ${item.subtitle} ${item.keywords}`.toLowerCase();
+        const hay = normalizeForMatch(`${item.title} ${item.subtitle} ${item.keywords}`);
         if (!tokens.every((t) => hay.includes(t))) return null;
-        const titleLower = item.title.toLowerCase();
+        const titleLower = normalizeForMatch(item.title);
         let score = 0;
         if (titleLower.startsWith(q)) score += 30;
         else if (titleLower.includes(q)) score += 18;
@@ -320,34 +547,64 @@ export function GlobalSearchBar() {
     setActiveIndex(0);
   }, [query, commandPaletteOpen]);
 
-  // Global Cmd/Ctrl+K or '/' shortcut
+  // Global Cmd+K / Ctrl+K shortcut to open & focus search bar from anywhere in the app
   useEffect(() => {
+    const focusInput = () => {
+      window.requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      });
+      window.setTimeout(() => {
+        if (document.activeElement !== inputRef.current) {
+          inputRef.current?.focus();
+          inputRef.current?.select();
+        }
+      }, 20);
+    };
+
     const onGlobalKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setCommandPaletteOpen(!commandPaletteOpen);
+        e.stopPropagation();
+        if (!commandPaletteOpen) {
+          setCommandPaletteOpen(true);
+          focusInput();
+        } else if (document.activeElement !== inputRef.current) {
+          focusInput();
+        } else {
+          setCommandPaletteOpen(false);
+        }
       } else if (e.key === '/' && !commandPaletteOpen) {
-        const tag = (e.target as HTMLElement | null)?.tagName;
-        if (tag && ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName;
+        if ((tag && ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) || target?.isContentEditable) {
+          return;
+        }
         e.preventDefault();
         setCommandPaletteOpen(true);
+        focusInput();
       } else if (e.key === 'Escape' && commandPaletteOpen) {
         setCommandPaletteOpen(false);
       }
     };
-    window.addEventListener('keydown', onGlobalKey);
-    return () => window.removeEventListener('keydown', onGlobalKey);
+    window.addEventListener('keydown', onGlobalKey, true);
+    return () => window.removeEventListener('keydown', onGlobalKey, true);
   }, [commandPaletteOpen, setCommandPaletteOpen]);
 
   useEffect(() => {
     if (commandPaletteOpen) {
       window.setTimeout(() => inputRef.current?.focus(), 20);
     } else {
+      setIsInputFocused(false);
       setQuery('');
+      recordedCurrentQueryRef.current = null;
     }
   }, [commandPaletteOpen]);
 
   const handleSelect = (entry: SearchEntry) => {
+    if (query.trim()) {
+      recordSearchQuery(query);
+    }
     if (entry.recipeId) {
       applyRecipe(entry.recipeId);
     } else if (entry.onRun) {
@@ -357,6 +614,14 @@ export function GlobalSearchBar() {
     }
     setCommandPaletteOpen(false);
     setQuery('');
+    recordedCurrentQueryRef.current = null;
+  };
+
+  const handleRerunSavedQuery = (savedQuery: string) => {
+    recordSearchQuery(savedQuery, true);
+    setQuery(savedQuery);
+    setActiveIndex(0);
+    inputRef.current?.focus();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -366,9 +631,13 @@ export function GlobalSearchBar() {
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActiveIndex((i) => Math.max(0, i - 1));
-    } else if (e.key === 'Enter' && results[activeIndex]) {
-      e.preventDefault();
-      handleSelect(results[activeIndex]);
+    } else if (e.key === 'Enter') {
+      if (results[activeIndex]) {
+        e.preventDefault();
+        handleSelect(results[activeIndex]);
+      } else if (query.trim()) {
+        recordSearchQuery(query);
+      }
     } else if (e.key === 'Escape') {
       setCommandPaletteOpen(false);
     }
@@ -423,9 +692,15 @@ export function GlobalSearchBar() {
           <Search className="w-4 h-4 text-[#5F6576] dark:text-[#8E96B0] shrink-0" strokeWidth={1.5} />
           <input
             ref={inputRef}
+            autoFocus
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => setIsInputFocused(true)}
+            onBlur={() => setIsInputFocused(false)}
+            onChange={(e) => {
+              recordedCurrentQueryRef.current = null;
+              setQuery(e.target.value);
+            }}
             onKeyDown={handleKeyDown}
             placeholder="Jump to tabs, search 13 modules, apply stack recipes, inspect L1–L6..."
             aria-label="Command Palette Search"
@@ -434,7 +709,9 @@ export function GlobalSearchBar() {
           {query && (
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
+                recordedCurrentQueryRef.current = null;
                 setQuery('');
                 inputRef.current?.focus();
               }}
@@ -449,97 +726,272 @@ export function GlobalSearchBar() {
           </kbd>
         </div>
 
-        {/* Results List */}
-        {results.length === 0 ? (
-          <div className="p-8 text-center space-y-3">
-            <p className="text-xs text-[#5F6576] dark:text-[#8E96B0]">
-              No direct portal matches for{' '}
-              <strong className="text-[#16213A] dark:text-[#E7EBF5]">&ldquo;{query}&rdquo;</strong>.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setCommandPaletteOpen(false);
-                setAiAssistantOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-[#1C6E46] hover:bg-[#165838] dark:bg-[#6FCB9F] dark:text-[#0B1020] text-white text-xs font-semibold cursor-pointer"
+        {/* Scrollable Dropdown Menu */}
+        <div className="max-h-[64vh] overflow-y-auto">
+          {/* Focus Dropdown: Popular Searches (5 Curated Investor Topics) */}
+          {isInputFocused && !query.trim() && (
+            <div
+              role="region"
+              aria-label="Popular Searches"
+              onMouseDown={(e) => e.preventDefault()}
+              className="border-b border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#10162B] px-4 py-2.5"
             >
-              <Sparkles className="w-3.5 h-3.5" strokeWidth={1.5} />
-              <span>Ask Spenta AI Advisor</span>
-            </button>
-          </div>
-        ) : (
-          <div
-            role="listbox"
-            className="max-h-[58vh] overflow-y-auto divide-y divide-[#E4DFD6] dark:divide-[#232B4A]"
-          >
-            {results.map((entry, idx) => {
-              const isActive = idx === activeIndex;
-              const inStack = entry.appId ? selectedIds.includes(entry.appId) : false;
+              <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#5F6576] dark:text-[#8E96B0] mb-2">
+                <span className="inline-flex items-center gap-1.5">
+                  <Sparkles
+                    className="w-3 h-3 text-[#1C6E46] dark:text-[#6FCB9F]"
+                    strokeWidth={1.7}
+                  />
+                  <span>Popular Searches</span>
+                </span>
+                <span>Investor Topics</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {POPULAR_SEARCH_TOPICS.map((topic) => (
+                  <button
+                    key={topic.label}
+                    type="button"
+                    onClick={() => handleRerunSavedQuery(topic.label)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-white dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1C6E46] dark:hover:border-[#6FCB9F] hover:bg-[#F2EFE9] dark:hover:bg-[#1C2545] text-left transition-colors cursor-pointer"
+                  >
+                    <span className="text-xs font-medium text-[#16213A] dark:text-[#E7EBF5]">
+                      {topic.label}
+                    </span>
+                    <span className="font-mono text-[10px] text-[#7B8294] dark:text-[#8E96B0]">
+                      {topic.hint}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
-              return (
-                <div
-                  key={entry.id}
-                  role="option"
-                  aria-selected={isActive}
-                  onMouseEnter={() => setActiveIndex(idx)}
-                  onClick={() => handleSelect(entry)}
-                  className={`px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
-                    isActive
-                      ? 'bg-[#F2EFE9] dark:bg-[#1C2545]'
-                      : 'bg-transparent hover:bg-[#F2EFE9]/70 dark:hover:bg-[#1C2545]/60'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    {renderKindIcon(entry.kind)}
-                    <div className="min-w-0">
-                      <div className="text-xs sm:text-[13px] font-medium text-[#16213A] dark:text-[#E7EBF5] truncate">
-                        {entry.title}
-                      </div>
-                      <div className="text-[11px] text-[#5F6576] dark:text-[#8E96B0] truncate mt-0.5 font-mono">
-                        {entry.subtitle}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    {entry.appId && (
+          {/* Persistent Recent Searches (Last 5 User Queries Saved Across Sessions) */}
+          {!query.trim() && (
+            <div
+              role="region"
+              aria-label="Recent Searches"
+              onMouseDown={(e) => e.preventDefault()}
+              className="border-b border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#10162B]"
+            >
+              <div className="px-4 py-1.5 flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#5F6576] dark:text-[#8E96B0] border-b border-[#E4DFD6]/70 dark:border-[#232B4A]/70">
+                <span>
+                  Recent Searches{' '}
+                  {recentQueries.length > 0 ? `(Last ${recentQueries.length})` : ''}
+                </span>
+                {recentQueries.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => persistRecentQueries([])}
+                    className="text-[10px] font-semibold normal-case tracking-normal text-[#5F6576] dark:text-[#8E96B0] hover:text-[#E11D48] dark:hover:text-rose-400 cursor-pointer"
+                  >
+                    Clear history
+                  </button>
+                )}
+              </div>
+              {recentQueries.length === 0 ? (
+                <div className="px-4 py-2 text-[11px] text-[#7B8294] dark:text-[#8E96B0]">
+                  No recent queries saved yet — press Enter or select a result to keep your last 5 searches across sessions.
+                </div>
+              ) : (
+                <div className="divide-y divide-[#E4DFD6]/60 dark:divide-[#232B4A]/60">
+                  {recentQueries.map((savedQuery) => (
+                    <div
+                      key={savedQuery}
+                      className="px-4 py-2 flex items-center justify-between gap-2 hover:bg-[#F2EFE9] dark:hover:bg-[#1C2545] transition-colors"
+                    >
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleApp(entry.appId!);
-                        }}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded font-mono text-[10px] font-semibold border transition-colors cursor-pointer ${
-                          inStack
-                            ? 'bg-[#1C6E46]/12 dark:bg-[#6FCB9F]/15 text-[#1C6E46] dark:text-[#6FCB9F] border-[#1C6E46]/40 dark:border-[#6FCB9F]/40'
-                            : 'bg-white dark:bg-[#0F1529] text-[#4A5163] dark:text-[#C8D0E4] border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8]'
-                        }`}
+                        onClick={() => handleRerunSavedQuery(savedQuery)}
+                        className="flex-1 min-w-0 flex items-center gap-2.5 text-left cursor-pointer"
                       >
-                        {inStack ? (
-                          <Check className="w-3 h-3" strokeWidth={1.5} />
-                        ) : (
-                          <Plus className="w-3 h-3" strokeWidth={1.5} />
-                        )}
-                        <span>{inStack ? 'In Stack' : 'Add'}</span>
+                        <History
+                          className="w-3.5 h-3.5 text-[#1C6E46] dark:text-[#6FCB9F] shrink-0"
+                          strokeWidth={1.6}
+                        />
+                        <span className="text-xs font-medium text-[#16213A] dark:text-[#E7EBF5] truncate">
+                          {savedQuery}
+                        </span>
+                        <span className="text-[10px] font-mono text-[#7B8294] dark:text-[#8E96B0] shrink-0">
+                          Re-run
+                        </span>
                       </button>
-                    )}
-                    <span className="font-mono text-[10px] text-[#7B8294] dark:text-[#8E96B0] uppercase tracking-wider">
-                      {entry.kind}
-                    </span>
-                  </div>
+                      <button
+                        type="button"
+                        onClick={() => removeRecentQuery(savedQuery)}
+                        aria-label={`Remove recent query ${savedQuery}`}
+                        className="p-1 rounded text-[#7B8294] hover:text-[#16213A] dark:hover:text-white cursor-pointer"
+                      >
+                        <X className="w-3 h-3" strokeWidth={1.6} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
-        )}
+              )}
+            </div>
+          )}
+
+          {/* Trending Searches: 5 Most Popular Investor Topics Sorted by Selection Frequency */}
+          {!query.trim() && trendingSearches.length > 0 && (
+            <div
+              role="region"
+              aria-label="Trending Searches"
+              onMouseDown={(e) => e.preventDefault()}
+              className="border-b border-[#E4DFD6] dark:border-[#232B4A] bg-[#F5F2EB] dark:bg-[#0E1426]"
+            >
+              <div className="px-4 py-1.5 flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#5F6576] dark:text-[#8E96B0] border-b border-[#E4DFD6]/70 dark:border-[#232B4A]/70">
+                <span className="inline-flex items-center gap-1.5">
+                  <TrendingUp
+                    className="w-3 h-3 text-[#1C6E46] dark:text-[#6FCB9F]"
+                    strokeWidth={1.7}
+                  />
+                  <span>Trending Searches · Top 5 by Frequency</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => persistSearchFrequencies({ ...DEFAULT_TRENDING_SEARCHES })}
+                  className="text-[10px] font-semibold normal-case tracking-normal text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5] cursor-pointer"
+                >
+                  Reset
+                </button>
+              </div>
+              <div className="divide-y divide-[#E4DFD6]/60 dark:divide-[#232B4A]/60">
+                {trendingSearches.map((item, rankIdx) => (
+                  <button
+                    key={item.query.toLowerCase()}
+                    type="button"
+                    onClick={() => handleRerunSavedQuery(item.query)}
+                    className="w-full px-4 py-2 flex items-center justify-between gap-3 text-left hover:bg-[#EAE5DB] dark:hover:bg-[#1C2545] transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-4 font-mono text-[10px] font-semibold text-[#7B8294] dark:text-[#8E96B0] shrink-0">
+                        #{rankIdx + 1}
+                      </span>
+                      <TrendingUp
+                        className="w-3.5 h-3.5 text-[#1C6E46] dark:text-[#6FCB9F] shrink-0"
+                        strokeWidth={1.6}
+                      />
+                      <span className="text-xs font-medium text-[#16213A] dark:text-[#E7EBF5] truncate">
+                        {item.query}
+                      </span>
+                    </div>
+                    <span className="font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded bg-white/80 dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] text-[#4A5163] dark:text-[#C8D0E4] shrink-0">
+                      {item.count}× selected
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Results List */}
+          {results.length === 0 ? (
+            <div className="p-8 text-center space-y-3">
+              <p className="text-xs text-[#5F6576] dark:text-[#8E96B0]">
+                No direct portal matches for{' '}
+                <strong className="text-[#16213A] dark:text-[#E7EBF5]">&ldquo;{query}&rdquo;</strong>.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (query.trim()) recordSearchQuery(query);
+                  setCommandPaletteOpen(false);
+                  setAiAssistantOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-[#1C6E46] hover:bg-[#165838] dark:bg-[#6FCB9F] dark:text-[#0B1020] text-white text-xs font-semibold cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" strokeWidth={1.5} />
+                <span>Ask Spenta AI Advisor</span>
+              </button>
+            </div>
+          ) : (
+            <div
+              role="listbox"
+              className="divide-y divide-[#E4DFD6] dark:divide-[#232B4A]"
+            >
+              {results.map((entry, idx) => {
+                const isActive = idx === activeIndex;
+                const inStack = entry.appId ? selectedIds.includes(entry.appId) : false;
+                const visibleHay = normalizeForMatch(`${entry.title} ${entry.subtitle} ${entry.kind}`);
+                const hiddenMatchedTokens = searchTokens.filter(
+                  (t) => !t.includes(' ') && !visibleHay.includes(normalizeForMatch(t)),
+                );
+
+                return (
+                  <div
+                    key={entry.id}
+                    role="option"
+                    aria-selected={isActive}
+                    onMouseEnter={() => setActiveIndex(idx)}
+                    onClick={() => handleSelect(entry)}
+                    className={`px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
+                      isActive
+                        ? 'bg-[#F2EFE9] dark:bg-[#1C2545]'
+                        : 'bg-transparent hover:bg-[#F2EFE9]/70 dark:hover:bg-[#1C2545]/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {renderKindIcon(entry.kind)}
+                      <div className="min-w-0">
+                        <div className="text-xs sm:text-[13px] font-medium text-[#16213A] dark:text-[#E7EBF5] truncate">
+                          <HighlightText text={entry.title} tokens={searchTokens} />
+                        </div>
+                        <div className="text-[11px] text-[#5F6576] dark:text-[#8E96B0] truncate mt-0.5 font-mono">
+                          <HighlightText text={entry.subtitle} tokens={searchTokens} />
+                          {hiddenMatchedTokens.length > 0 && (
+                            <span className="ml-1.5">
+                              ·{' '}
+                              <HighlightText
+                                text={hiddenMatchedTokens.join(' · ')}
+                                tokens={searchTokens}
+                              />
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {entry.appId && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleApp(entry.appId!);
+                          }}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded font-mono text-[10px] font-semibold border transition-colors cursor-pointer ${
+                            inStack
+                              ? 'bg-[#1C6E46]/12 dark:bg-[#6FCB9F]/15 text-[#1C6E46] dark:text-[#6FCB9F] border-[#1C6E46]/40 dark:border-[#6FCB9F]/40'
+                              : 'bg-white dark:bg-[#0F1529] text-[#4A5163] dark:text-[#C8D0E4] border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8]'
+                          }`}
+                        >
+                          {inStack ? (
+                            <Check className="w-3 h-3" strokeWidth={1.5} />
+                          ) : (
+                            <Plus className="w-3 h-3" strokeWidth={1.5} />
+                          )}
+                          <span>{inStack ? 'In Stack' : 'Add'}</span>
+                        </button>
+                      )}
+                      <span className="font-mono text-[10px] text-[#7B8294] dark:text-[#8E96B0] uppercase tracking-wider">
+                        <HighlightText text={entry.kind} tokens={searchTokens} />
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Palette Footer */}
         <div className="px-4 py-2 bg-[#F2EFE9] dark:bg-[#0B1020] border-t border-[#E4DFD6] dark:border-[#232B4A] flex items-center justify-between text-[10px] font-mono text-[#5F6576] dark:text-[#8E96B0]">
           <span>
-            {query.trim() ? `${results.length} matches` : 'Quick Navigation · Recipes · 13 Modules'}
+            {query.trim()
+              ? `${results.length} matches`
+              : 'Quick Navigation · Recent & Trending Searches · 13 Modules'}
           </span>
-          <span className="hidden sm:inline">↑↓ Navigate · ↵ Open · ⌘K Toggle</span>
+          <span className="hidden sm:inline">↑↓ Navigate · ↵ Open · ⌘K / Ctrl+K Focus</span>
         </div>
       </div>
     </div>

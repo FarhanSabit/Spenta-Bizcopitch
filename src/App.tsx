@@ -1,5 +1,5 @@
-import React from 'react';
-import { Link2, RotateCcw, X } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link2, RefreshCw, RotateCcw, WifiOff, X } from 'lucide-react';
 import { SPENTA_CONTACT_EMAIL } from './data/spentaManifest';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { StackProvider, useStack } from './store/StackContext';
@@ -17,6 +17,33 @@ import { SpentaAiAssistant } from './components/SpentaAiAssistant';
 import { GlobalSearchBar } from './components/GlobalSearchBar';
 import { SpentaThemeView } from './components/SpentaThemeView';
 import { MobileGridToggle } from './components/MobileGridToggle';
+import { ResilientErrorBoundary } from './components/ResilientErrorBoundary';
+
+interface EnvironmentNotice {
+  title: string;
+  detail: string;
+  kind: 'offline' | 'connectivity';
+}
+
+function isIgnorableHmrRejection(reason: unknown): boolean {
+  const msg = reason instanceof Error ? reason.message : String(reason ?? '');
+  const stack = reason instanceof Error ? reason.stack ?? '' : '';
+  return (
+    msg.includes('WebSocket closed without opened') &&
+    (stack.includes('@vite/client') || stack.includes('vite/dist/client'))
+  );
+}
+
+function isConnectivityReason(reason: unknown): boolean {
+  const msg = (reason instanceof Error ? reason.message : String(reason ?? '')).toLowerCase();
+  return (
+    msg.includes('failed to fetch') ||
+    msg.includes('networkerror') ||
+    msg.includes('load failed') ||
+    msg.includes('websocket') ||
+    msg.includes('err_network')
+  );
+}
 
 function PortalShell() {
   const {
@@ -27,12 +54,131 @@ function PortalShell() {
     resetToLocalDefaults,
   } = useStack();
   const { theme } = useTheme();
+  const [envNotice, setEnvNotice] = useState<EnvironmentNotice | null>(() =>
+    typeof navigator !== 'undefined' && navigator.onLine === false
+      ? {
+          kind: 'offline',
+          title: 'Offline Mode Active',
+          detail:
+            'Browser network connectivity is offline. Local stack composition, calculator modeling, and cached assets remain interactive.',
+        }
+      : null,
+  );
+  const [recheckingHealth, setRecheckingHealth] = useState(false);
+
+  useEffect(() => {
+    const handleOffline = () => {
+      setEnvNotice({
+        kind: 'offline',
+        title: 'Network Connectivity Lost',
+        detail:
+          'You appear offline. Local workspace state and composed modules are preserved until connectivity resumes.',
+      });
+    };
+
+    const handleOnline = () => {
+      setEnvNotice(null);
+    };
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (isIgnorableHmrRejection(event.reason)) {
+        event.preventDefault();
+        return;
+      }
+      if (isConnectivityReason(event.reason)) {
+        event.preventDefault();
+        const detail =
+          event.reason instanceof Error
+            ? event.reason.message
+            : 'A background network or stream request failed.';
+        setEnvNotice({
+          kind: 'connectivity',
+          title: 'Connectivity Notice',
+          detail: `${detail} Your current workspace state remains intact.`,
+        });
+      }
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+
+  const handleRecheckConnectivity = useCallback(async () => {
+    setRecheckingHealth(true);
+    try {
+      const res = await fetch('/api/health', { cache: 'no-store' });
+      if (res.ok) {
+        setEnvNotice(null);
+      } else {
+        setEnvNotice({
+          kind: 'connectivity',
+          title: 'Environment Check Returned HTTP ' + res.status,
+          detail: 'Local portal views remain responsive while backend connectivity recovers.',
+        });
+      }
+    } catch {
+      setEnvNotice({
+        kind: 'offline',
+        title: 'Backend Unreachable',
+        detail:
+          'Unable to reach /api/health. Local views and saved configurations continue operating offline.',
+      });
+    } finally {
+      setRecheckingHealth(false);
+    }
+  }, []);
 
   return (
     <div className="min-h-screen spenta-canvas print:bg-white print:text-zinc-950 print:min-h-0 flex flex-col overflow-x-hidden print:overflow-visible transition-colors duration-150">
       <Navbar />
 
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-3.5 sm:px-6 py-5 sm:py-6 print:max-w-none print:p-0">
+        {envNotice && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-4 rounded-xl border border-amber-500/35 bg-amber-500/10 dark:bg-amber-500/12 px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 no-print"
+          >
+            <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/35 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                <WifiOff className="w-3.5 h-3.5 text-amber-700 dark:text-amber-300" strokeWidth={1.75} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-semibold spenta-ink">{envNotice.title}</div>
+                <div className="text-[11px] spenta-muted">{envNotice.detail}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={recheckingHealth}
+                onClick={() => void handleRecheckConnectivity()}
+                className="inline-flex items-center gap-1.5 min-h-[34px] px-2.5 py-1.5 rounded-lg spenta-surface border hover:border-[#1F3863] dark:hover:border-[#8FA6E8] text-xs font-medium spenta-ink transition-colors cursor-pointer whitespace-nowrap disabled:opacity-60"
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${recheckingHealth ? 'animate-spin' : ''}`}
+                  strokeWidth={1.6}
+                />
+                <span>{recheckingHealth ? 'Checking…' : 'Retry'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEnvNotice(null)}
+                className="inline-flex items-center justify-center w-8 h-8 rounded-lg spenta-muted hover:text-[#16213A] dark:hover:text-[#E7EBF5] hover:bg-[#F2EFE9] dark:hover:bg-[#1E2747] transition-colors cursor-pointer"
+                aria-label="Dismiss connectivity notification"
+              >
+                <X className="w-4 h-4" strokeWidth={1.6} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {sharedSnapshotSummary && (
           <div
             role="status"
@@ -72,15 +218,22 @@ function PortalShell() {
           </div>
         )}
 
-        <SpentaThemeView viewId={activeTab}>
-          {activeTab === 'App Vault' && <SpentaBrainVault />}
-          {activeTab === 'Infographics' && <InfographicsView />}
-          {activeTab === 'Financials' && <FinancialsView />}
-          {activeTab === 'Spenta Core' && <SpentaCoreView />}
-          {activeTab === 'The Brain' && <TheBrainView />}
-          {activeTab === 'Pitch Deck' && <PitchDeckView />}
-          {activeTab === 'Resources' && <ResourcesView />}
-        </SpentaThemeView>
+        <ResilientErrorBoundary
+          scope="view"
+          resetKey={activeTab}
+          contextLabel={activeTab}
+          onReturnHome={activeTab !== 'App Vault' ? () => setActiveTab('App Vault') : undefined}
+        >
+          <SpentaThemeView viewId={activeTab}>
+            {activeTab === 'App Vault' && <SpentaBrainVault />}
+            {activeTab === 'Infographics' && <InfographicsView />}
+            {activeTab === 'Financials' && <FinancialsView />}
+            {activeTab === 'Spenta Core' && <SpentaCoreView />}
+            {activeTab === 'The Brain' && <TheBrainView />}
+            {activeTab === 'Pitch Deck' && <PitchDeckView />}
+            {activeTab === 'Resources' && <ResourcesView />}
+          </SpentaThemeView>
+        </ResilientErrorBoundary>
       </main>
 
       <footer className="spenta-band spenta-muted border-t mt-10 no-print">
@@ -125,10 +278,12 @@ function PortalShell() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <StackProvider>
-        <PortalShell />
-      </StackProvider>
-    </ThemeProvider>
+    <ResilientErrorBoundary scope="portal" contextLabel="Spenta Sovereign OS">
+      <ThemeProvider>
+        <StackProvider>
+          <PortalShell />
+        </StackProvider>
+      </ThemeProvider>
+    </ResilientErrorBoundary>
   );
 }
