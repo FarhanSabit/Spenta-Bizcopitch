@@ -86,7 +86,7 @@ function PortalShell() {
       <footer className="spenta-band spenta-muted border-t mt-10 no-print">
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs">
           <div className="flex items-center gap-3 min-w-0">
-            <SpentaLogo className="h-6" tone={theme === 'dark' ? 'dark-bg' : 'light-bg'} />
+            <SpentaLogo className="h-6 sm:h-7" tone={theme === 'dark' ? 'dark-bg' : 'light-bg'} />
             <span className="h-3.5 w-px bg-[#CFC8BC] dark:bg-[#232B4A] shrink-0" />
             <span className="font-mono text-[11px] spenta-muted truncate">
               Sovereign AI · ERP · Fintech · Voice · Spatial XR

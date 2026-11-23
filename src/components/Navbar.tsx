@@ -36,7 +36,7 @@ export function Navbar() {
           className="flex items-center gap-2.5 shrink-0 cursor-pointer focus:outline-none"
           aria-label="Spenta Sovereign OS Home"
         >
-          <SpentaLogo className="h-7" tone={theme === 'dark' ? 'dark-bg' : 'light-bg'} />
+          <SpentaLogo className="h-7 sm:h-8" tone={theme === 'dark' ? 'dark-bg' : 'light-bg'} />
           <span className="hidden 2xl:block h-4 w-px bg-[#CFC8BC] dark:bg-[#232B4A]" />
           <span className="hidden 2xl:inline-block text-[11px] font-mono font-medium tracking-[0.12em] text-[#5F6576] dark:text-[#8E96B0] whitespace-nowrap">
             SOVEREIGN OS

@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { PitchSlide, SPENTA_CONTACT_EMAIL, SPENTA_LOGO_URL } from '../data/spentaManifest';
+import { PitchSlide, SPENTA_CONTACT_EMAIL, SPENTA_LOGO_DARK_URL, SPENTA_LOGO_URL } from '../data/spentaManifest';
 
 type RGB = [number, number, number];
 
@@ -109,16 +109,18 @@ async function tryLoadLogoDataUrl(url: string): Promise<{ dataUrl: string; ratio
       window.clearTimeout(timeout);
       try {
         const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth || 240;
-        canvas.height = img.naturalHeight || 64;
+        const baseW = img.naturalWidth || 368;
+        const baseH = img.naturalHeight || 112;
+        canvas.width = baseW * 2;
+        canvas.height = baseH * 2;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           resolve(null);
           return;
         }
-        ctx.drawImage(img, 0, 0);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/png');
-        resolve({ dataUrl, ratio: canvas.width / Math.max(1, canvas.height) });
+        resolve({ dataUrl, ratio: baseW / Math.max(1, baseH) });
       } catch {
         resolve(null);
       }
@@ -464,7 +466,10 @@ export async function exportPitchDeckToPdf({
     keywords: 'Spenta, Sovereign OS, AI, ERP, Spatial XR, SAFE, Investor Deck',
   });
 
-  const logoAsset = await tryLoadLogoDataUrl(SPENTA_LOGO_URL);
+  const [lightLogoAsset, darkLogoAsset] = await Promise.all([
+    tryLoadLogoDataUrl(SPENTA_LOGO_URL),
+    tryLoadLogoDataUrl(SPENTA_LOGO_DARK_URL),
+  ]);
 
   const hasAppendix = Boolean(stackAppendix && stackAppendix.moduleCount > 0);
   const totalExportPages = slides.length + (hasAppendix ? 1 : 0);
@@ -491,7 +496,13 @@ export async function exportPitchDeckToPdf({
     doc.rect(0, 0, W, 1.4, 'F');
 
     // Header: Official Logo / Emblem + Section Tag + Slide Counter
-    const brandW = drawBrandMark(doc, padX, 9.5, isDark, logoAsset);
+    const brandW = drawBrandMark(
+      doc,
+      padX,
+      9.5,
+      isDark,
+      isDark ? (darkLogoAsset ?? lightLogoAsset) : lightLogoAsset,
+    );
 
     const secLabel = sanitizePdfText(slide.section.toUpperCase());
     doc.setFont('courier', 'bold');
@@ -641,7 +652,7 @@ export async function exportPitchDeckToPdf({
       contentW,
       stackAppendix,
       appendixDark,
-      logoAsset,
+      appendixDark ? (darkLogoAsset ?? lightLogoAsset) : lightLogoAsset,
       totalExportPages,
       totalExportPages,
       dateLabel,

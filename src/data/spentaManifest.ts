@@ -1,6 +1,8 @@
 import spentaLogoAsset from '../assets/spenta-logo.svg';
+import spentaLogoDarkAsset from '../assets/spenta-logo-dark.svg';
 
 export const SPENTA_LOGO_URL = spentaLogoAsset;
+export const SPENTA_LOGO_DARK_URL = spentaLogoDarkAsset;
 
 export const SPENTA_CONTACT_EMAIL = 'hello@spenta.tech';
 

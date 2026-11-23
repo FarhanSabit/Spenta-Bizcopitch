@@ -8,6 +8,7 @@ import {
   Cpu,
   Database,
   Download,
+  Film,
   Grid2x2,
   Grid3x3,
   Landmark,
@@ -40,8 +41,9 @@ import { useStack } from '../store/StackContext';
 import { usePathwayBrainSync } from '../hooks/usePathwayBrainSync';
 import { copyTextWithFallback } from '../utils/shareUrlCodec';
 import { SovereignBrain3D } from './three/SovereignBrain3D';
+import { ShowreelAndBrandsStudio } from './ShowreelAndBrandsStudio';
 
-type VaultViewMode = 'matrix' | 'grid' | 'brain3d';
+type VaultViewMode = 'matrix' | 'grid' | 'brain3d' | 'showreel';
 
 const GOVERNANCE_MARQUEE_ITEMS = [
   'ZERO CLOUD PII EXFILTRATION',
@@ -99,7 +101,7 @@ const VAULT_VIEW_MODE_STORAGE_KEY = 'spenta_vault_view_mode_v1';
 function loadStoredVaultViewMode(): VaultViewMode {
   try {
     const raw = window.localStorage.getItem(VAULT_VIEW_MODE_STORAGE_KEY);
-    if (raw === 'matrix' || raw === 'grid' || raw === 'brain3d') {
+    if (raw === 'matrix' || raw === 'grid' || raw === 'brain3d' || raw === 'showreel') {
       return raw;
     }
   } catch {
@@ -145,6 +147,7 @@ export function SpentaBrainVault() {
   const [hoveredAppId, setHoveredAppId] = useState<string | null>(null);
   const [matrixShareCopied, setMatrixShareCopied] = useState(false);
   const [matrixBriefCopied, setMatrixBriefCopied] = useState(false);
+  const [showreelSeek, setShowreelSeek] = useState<{ seconds: number; nonce: number } | null>(null);
   const { activeBrainSelection, selectBrainNode } = usePathwayBrainSync();
 
   const handleMatrixShare = async () => {
@@ -172,6 +175,14 @@ export function SpentaBrainVault() {
         setDeployFilter('all');
         setSearchQuery(target.shortName);
       }
+      clearPendingNavFocus();
+    } else if (pendingNavFocus?.type === 'showreel') {
+      const seconds = Number(pendingNavFocus.id);
+      setViewMode('showreel');
+      setShowreelSeek({
+        seconds: Number.isFinite(seconds) && seconds >= 0 ? seconds : 0,
+        nonce: Date.now(),
+      });
       clearPendingNavFocus();
     }
   }, [pendingNavFocus, appMap, clearPendingNavFocus]);
@@ -270,6 +281,18 @@ export function SpentaBrainVault() {
               >
                 <Box className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span>3D Neural Core</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('showreel')}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                  viewMode === 'showreel'
+                    ? 'bg-[#1C6E46] text-white dark:bg-[#6FCB9F] dark:text-[#0B1020]'
+                    : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+                }`}
+              >
+                <Film className="w-3.5 h-3.5" strokeWidth={1.5} />
+                <span>Showreel Studio</span>
               </button>
             </div>
           </div>
@@ -993,6 +1016,9 @@ export function SpentaBrainVault() {
           </div>
         </section>
       )}
+
+      {/* VIEW 4: INTERACTIVE CHAPTERED 1080p SHOWREEL & BRAND STUDIO */}
+      {viewMode === 'showreel' && <ShowreelAndBrandsStudio seekSignal={showreelSeek} />}
     </div>
   );
 }

@@ -38,7 +38,6 @@ import {
   FINANCIAL_TRAJECTORY,
   SERVER_TIERS,
   SPENTA_APPS,
-  SPENTA_LOGO_URL,
 } from '../data/spentaManifest';
 import {
   REVENUE_SCOPES,
@@ -54,6 +53,7 @@ import {
   ROI_CONFIDENCE_EVIDENCE_NOTE,
 } from '../data/spentaEnrichments';
 import { useStack } from '../store/StackContext';
+import { SpentaLogo } from './SpentaLogo';
 import {
   QuarterRow,
   QuarterlyExecutiveSummaryData,
@@ -2271,11 +2271,7 @@ export function FinancialsView() {
                 <div className="bg-[#0F1529] text-white px-5 sm:px-6 py-5 border-b border-[#6FCB9F]/35">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <img
-                        src={SPENTA_LOGO_URL}
-                        alt="Spenta Technology"
-                        className="h-7 w-auto object-contain"
-                      />
+                      <SpentaLogo className="h-7 sm:h-8" tone="dark-bg" />
                       <span className="font-mono text-[10px] font-bold tracking-wider uppercase text-[#6FCB9F] bg-[#6FCB9F]/10 border border-[#6FCB9F]/30 px-2 py-0.5 rounded">
                         QUARTERLY EXECUTIVE BRIEF
                       </span>

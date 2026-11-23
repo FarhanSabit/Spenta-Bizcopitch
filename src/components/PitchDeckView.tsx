@@ -16,10 +16,13 @@ import {
 import { PITCH_DECK_SLIDES, PitchSlide, SERVER_TIERS } from '../data/spentaManifest';
 import {
   AI_SAFETY_CLIMATE_SLIDES,
+  CORE_LEADERSHIP_TEAM,
   CTO_TECHNICAL_SLIDES,
+  INVESTOR_GLOSSARY,
   INVESTOR_MASTER_ADDITIONAL_SLIDES,
   PITCH_DECK_TRACKS,
   PitchDeckTrackId,
+  QA_CREDIBILITY_SHIELD,
 } from '../data/spentaEnrichments';
 import { useStack } from '../store/StackContext';
 import {
@@ -708,6 +711,130 @@ export function PitchDeckView() {
           )}
         </div>
       </div>
+
+      {/* Executive Diligence Reference Strip: Canonical 45/30/15/10 SAFE, 4-Leader Team & Q&A Credibility Shield */}
+      <section className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-5 space-y-5 no-print pitch-deck-nav">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 pb-3 border-b border-[#E4DFD6] dark:border-[#232B4A]">
+          <div>
+            <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-[#1C6E46] dark:text-[#6FCB9F] font-semibold">
+              Institutional Diligence Companion · Canonical $500K Post-Money SAFE ($4.5M Cap)
+            </div>
+            <h2 className="text-base sm:text-lg font-bold text-[#16213A] dark:text-[#E7EBF5] mt-0.5">
+              Use of Funds (45/30/15/10), Verified Leadership &amp; Q&amp;A Credibility Shield
+            </h2>
+          </div>
+          <span className="text-xs font-mono text-[#5F6576] dark:text-[#8E96B0] tabular-nums shrink-0">
+            11.11% Pre-Dilution Cap · 20% Discount
+          </span>
+        </div>
+
+        {/* Canonical 45/30/15/10 Use of Funds Split */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { pct: '45%', label: 'Core Engineering & Sovereign AI', usd: '$225K', detail: '20-FTE Dhaka enclave, L1–L6 kernel, Healthcare ERP' },
+            { pct: '30%', label: 'Compliance & Clinical Validation', usd: '$150K', detail: 'HIPAA, SOC 2 Type II, ISO 27001, TGA/FDA/DGDA' },
+            { pct: '15%', label: 'Enterprise GTM & Partnerships', usd: '$75K', detail: 'US/AU/BD hospital & BFSI pilot conversions' },
+            { pct: '10%', label: 'On-Prem Hardware & Reserve', usd: '$50K', detail: 'Tier 3 demo rigs & working capital buffer' },
+          ].map((bucket) => (
+            <div
+              key={bucket.label}
+              className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] p-3.5"
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-mono text-lg font-extrabold text-[#1C6E46] dark:text-[#6FCB9F] tabular-nums">
+                  {bucket.pct}
+                </span>
+                <span className="font-mono text-xs font-semibold text-[#1F3863] dark:text-[#8FA6E8] tabular-nums">
+                  {bucket.usd}
+                </span>
+              </div>
+              <div className="text-xs font-bold text-[#16213A] dark:text-[#E7EBF5] mt-1">
+                {bucket.label}
+              </div>
+              <p className="text-[11px] text-[#5F6576] dark:text-[#8E96B0] mt-1 leading-relaxed">
+                {bucket.detail}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {/* Confirmed 4-Leader Executive Grid */}
+        <div className="space-y-2.5">
+          <div className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#5F6576] dark:text-[#8E96B0] font-semibold">
+            Confirmed Core Leadership Team (4 Executives · AU / US / Dhaka Enclave)
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            {CORE_LEADERSHIP_TEAM.map((leader) => (
+              <div
+                key={leader.id}
+                className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] p-3.5 flex flex-col gap-1.5"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="w-8 h-8 rounded-lg bg-[#1F3863] dark:bg-[#8FA6E8] text-white dark:text-[#0B1020] font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                    {leader.initials}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-[#16213A] dark:text-[#E7EBF5] truncate">
+                      {leader.name}
+                    </div>
+                    <div className="text-[11px] text-[#1C6E46] dark:text-[#6FCB9F] truncate">
+                      {leader.role}
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[11px] text-[#4A5568] dark:text-[#A4ADC6] leading-relaxed">
+                  {leader.focus}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Q&A Credibility Shield & Investor Glossary */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-1">
+          <div className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] p-4 space-y-2.5">
+            <div className="text-xs font-mono font-bold uppercase tracking-wider text-[#1F3863] dark:text-[#8FA6E8]">
+              Q&amp;A Credibility Shield (Diligence Defense)
+            </div>
+            <div className="space-y-2">
+              {QA_CREDIBILITY_SHIELD.map((qa) => (
+                <div
+                  key={qa.question}
+                  className="rounded-lg border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-3"
+                >
+                  <div className="text-xs font-bold text-[#16213A] dark:text-[#E7EBF5]">
+                    {qa.question}
+                  </div>
+                  <p className="text-[11px] text-[#4A5568] dark:text-[#A4ADC6] mt-1 leading-relaxed">
+                    {qa.answer}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] p-4 space-y-2.5">
+            <div className="text-xs font-mono font-bold uppercase tracking-wider text-[#1C6E46] dark:text-[#6FCB9F]">
+              Institutional Glossary
+            </div>
+            <div className="space-y-2">
+              {INVESTOR_GLOSSARY.map((item) => (
+                <div
+                  key={item.term}
+                  className="rounded-lg border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-3"
+                >
+                  <div className="text-xs font-bold font-mono text-[#16213A] dark:text-[#E7EBF5]">
+                    {item.term}
+                  </div>
+                  <p className="text-[11px] text-[#4A5568] dark:text-[#A4ADC6] mt-1 leading-relaxed">
+                    {item.definition}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Print-Only Paginated Active Track Executive Deck */}
       <div className="pitch-deck-print-deck">

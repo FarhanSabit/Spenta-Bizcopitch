@@ -17,6 +17,7 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import { useStack } from '../store/StackContext';
 import { REGIONAL_HUBS } from '../data/roiModel';
+import { SpentaLogo } from './SpentaLogo';
 
 type Persona = 'architect' | 'investor' | 'market';
 type ModelChoice = 'gemini-4-hydrogen' | 'gemini-3.1-flash-lite';
@@ -314,8 +315,8 @@ export function SpentaAiAssistant() {
               }`}
             >
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-[#6FCB9F]/15 border border-[#6FCB9F]/35 flex items-center justify-center shrink-0">
-                  <MessageSquare className="w-4 h-4 text-[#6FCB9F]" strokeWidth={1.5} />
+                <div className="w-8 h-8 rounded-lg bg-[#0F1529] border border-[#6FCB9F]/35 flex items-center justify-center shrink-0 p-1">
+                  <SpentaLogo variant="mark" className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
                   <div className="font-bold text-sm truncate">Spenta AI Advisor</div>

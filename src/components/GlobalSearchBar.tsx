@@ -414,8 +414,9 @@ export function GlobalSearchBar() {
       aria-label="Spenta Command Palette"
     >
       <div
+        id="global-search-bar-container"
         onClick={(e) => e.stopPropagation()}
-        className="w-[92vw] sm:w-[76vw] md:w-[68vw] lg:w-[58vw] xl:w-[54vw] min-w-[50vw] bg-[#FAF8F4] dark:bg-[#141A32] text-[#16213A] dark:text-[#E7EBF5] rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] shadow-2xl overflow-hidden"
+        className="w-full md:w-1/2 min-w-[50vw] bg-[#FAF8F4] dark:bg-[#141A32] text-[#16213A] dark:text-[#E7EBF5] rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] shadow-2xl overflow-hidden"
       >
         {/* Search Input Row */}
         <div className="w-full flex items-center gap-3 px-4 sm:px-5 py-3.5 bg-white dark:bg-[#0F1529] border-b border-[#E4DFD6] dark:border-[#232B4A]">

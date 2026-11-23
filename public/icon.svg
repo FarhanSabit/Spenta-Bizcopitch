@@ -1,1 +1,35 @@
-<svg width="50" height="50" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg"><path d="M38 46H12c-4.418 0-8-3.498-8-7.814V4h30c2.21 0 4 1.75 4 3.907V46Z" fill="#2EBCFA"/><path d="M12 46h26a7.999 7.999 0 0 0 8-8H20a8 8 0 0 1-8 8Z" fill="#144496"/><path d="M38 8C23.408 8 10.687 16.014 4 27.88V4h30a4 4 0 0 1 4 4Z" fill="#088BF5"/><path d="M20.425 34h1.181v-1.707c3.23-.198 5.394-1.791 5.394-4.435v-.021c0-2.332-1.495-3.498-4.442-4.143l-.952-.198v-3.02c1.035.167 1.715.74 1.86 1.708l.011.02 3.283-.01.01-.01c-.115-2.53-2.007-4.216-5.164-4.435V16h-1.18v1.739c-3.074.145-5.28 1.728-5.28 4.33v.021c0 2.343 1.547 3.602 4.338 4.216l.941.198v3.082c-1.223-.115-1.934-.625-2.101-1.54l-.01-.022-3.293.01-.021.011c.084 2.665 2.237 4.133 5.425 4.258V34Zm-1.777-12.19v-.022c0-.75.606-1.228 1.777-1.332v2.769c-1.213-.323-1.777-.729-1.777-1.416Zm4.85 6.423v.02c0 .802-.68 1.229-1.892 1.333v-2.821c1.36.343 1.892.697 1.892 1.468Z" fill="#fff"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="spentaLeafMarkGrad" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#134E32" />
+      <stop offset="48%" stop-color="#189350" />
+      <stop offset="82%" stop-color="#B91C2E" />
+      <stop offset="100%" stop-color="#DC2638" />
+    </linearGradient>
+    <clipPath id="spentaLeafMarkClip">
+      <path d="M9 54 C5 30, 18 9, 57 7 C59 38, 40 57, 9 54 Z" />
+    </clipPath>
+  </defs>
+
+  <path
+    d="M9 54 C5 30, 18 9, 57 7 C59 38, 40 57, 9 54 Z"
+    fill="url(#spentaLeafMarkGrad)"
+  />
+
+  <g clip-path="url(#spentaLeafMarkClip)" stroke="#FFFFFF" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- Left vertical branch to node -->
+    <path d="M12 49 L19 42 L19 33" />
+    <circle cx="19" cy="29" r="3.4" />
+
+    <!-- Main central spine to top-right node -->
+    <path d="M9 54 L26 38 L35 38 L44 29 L44 20" />
+    <circle cx="44" cy="16.2" r="3.4" />
+
+    <!-- Middle center node -->
+    <circle cx="30.5" cy="29" r="3.4" />
+
+    <!-- Lower horizontal branch in crimson belly -->
+    <path d="M20 53 L29 44 L40 44" />
+    <circle cx="43.8" cy="44" r="3.4" />
+  </g>
+</svg>
