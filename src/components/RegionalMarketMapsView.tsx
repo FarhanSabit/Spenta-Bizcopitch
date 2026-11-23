@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { REGIONAL_HUBS, RegionalHubSpec } from '../data/roiModel';
 
-interface MapsPlaceSource {
+export interface MapsPlaceSource {
   title: string;
   uri: string;
   domain?: string;
@@ -17,9 +17,29 @@ interface MapsPlaceSource {
   reviewSnippet?: string;
 }
 
-interface MapsGroundingResponse {
+export interface MapsGroundingResponse {
   text: string;
   sources: MapsPlaceSource[];
+}
+
+export interface SharedMapsMarketState {
+  loading: boolean;
+  error: string | null;
+  result: MapsGroundingResponse | null;
+  activePromptLabel: string;
+  activeHubLabel: string;
+}
+
+export interface MapsQueryPayload {
+  query: string;
+  label: string;
+  hubLabel: string;
+  latLng?: { latitude: number; longitude: number };
+}
+
+interface RegionalMarketMapsViewProps {
+  sharedMaps?: SharedMapsMarketState;
+  onRunMapsQuery?: (payload: MapsQueryPayload) => Promise<void>;
 }
 
 function renderMarkdownBrief(text: string) {
@@ -69,15 +89,23 @@ function renderMarkdownBrief(text: string) {
   );
 }
 
-export function RegionalMarketMapsView() {
+export function RegionalMarketMapsView({
+  sharedMaps,
+  onRunMapsQuery,
+}: RegionalMarketMapsViewProps = {}) {
   const [selectedHub, setSelectedHub] = useState<RegionalHubSpec>(REGIONAL_HUBS[2]); // Dhaka default
   const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [geoStatus, setGeoStatus] = useState<string | null>(null);
   const [customQuery, setCustomQuery] = useState<string>('');
-  const [activePromptLabel, setActivePromptLabel] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<MapsGroundingResponse | null>(null);
+  const [localPromptLabel, setLocalPromptLabel] = useState<string>('');
+  const [localLoading, setLocalLoading] = useState<boolean>(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [localResult, setLocalResult] = useState<MapsGroundingResponse | null>(null);
+
+  const loading = sharedMaps ? sharedMaps.loading : localLoading;
+  const error = sharedMaps ? sharedMaps.error : localError;
+  const result = sharedMaps ? sharedMaps.result : localResult;
+  const activePromptLabel = sharedMaps ? sharedMaps.activePromptLabel : localPromptLabel;
 
   const runMapsQuery = async (
     queryText: string,
@@ -87,14 +115,27 @@ export function RegionalMarketMapsView() {
   ) => {
     const clean = queryText.trim();
     if (!clean) return;
-    setLoading(true);
-    setError(null);
-    setActivePromptLabel(label);
 
     const coords =
       coordsOverride !== undefined
         ? coordsOverride
         : userCoords ?? { latitude: selectedHub.latitude, longitude: selectedHub.longitude };
+    const resolvedHubLabel =
+      hubNameOverride ?? (userCoords ? 'Current User Location' : selectedHub.name);
+
+    if (onRunMapsQuery) {
+      await onRunMapsQuery({
+        query: clean,
+        label,
+        hubLabel: resolvedHubLabel,
+        latLng: coords ?? undefined,
+      });
+      return;
+    }
+
+    setLocalLoading(true);
+    setLocalError(null);
+    setLocalPromptLabel(label);
 
     try {
       const res = await fetch('/api/gemini/maps-grounding', {
@@ -102,7 +143,7 @@ export function RegionalMarketMapsView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query: clean,
-          hubLabel: hubNameOverride ?? (userCoords ? 'Current User Location' : selectedHub.name),
+          hubLabel: resolvedHubLabel,
           latLng: coords ?? undefined,
         }),
       });
@@ -110,14 +151,16 @@ export function RegionalMarketMapsView() {
       if (!res.ok) {
         throw new Error(payload?.error || 'Google Maps grounding request failed.');
       }
-      setResult({
+      setLocalResult({
         text: payload.text || '',
         sources: Array.isArray(payload.sources) ? payload.sources : [],
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to reach Google Maps grounding service.');
+      setLocalError(
+        err instanceof Error ? err.message : 'Unable to reach Google Maps grounding service.',
+      );
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
   };
 

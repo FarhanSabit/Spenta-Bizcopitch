@@ -324,7 +324,19 @@ export async function runSpentaChat(req: GeminiChatRequest): Promise<{
   };
 }
 
-export async function runSearchGroundedBrief(query: string): Promise<{
+export interface RoiBenchmarkContext {
+  productName?: string;
+  scenarioLabel?: string;
+  modeledRoiPct?: number;
+  paybackMonths?: number;
+  spentaThreeYrTcoUsd?: number;
+  westernThreeYrTcoUsd?: number;
+}
+
+export async function runSearchGroundedBrief(
+  query: string,
+  context?: RoiBenchmarkContext,
+): Promise<{
   text: string;
   sources: GroundedSource[];
   searchQueries: string[];
@@ -336,13 +348,37 @@ export async function runSearchGroundedBrief(query: string): Promise<{
     throw new Error('A search query is required.');
   }
 
+  const contextLines = context
+    ? [
+        context.productName ? `Target Solution: ${context.productName}` : '',
+        context.scenarioLabel ? `Financial Scenario: ${context.scenarioLabel}` : '',
+        typeof context.modeledRoiPct === 'number'
+          ? `Modeled 12-Month Client ROI: ${context.modeledRoiPct}%`
+          : '',
+        typeof context.paybackMonths === 'number'
+          ? `Modeled Payback Period: ${context.paybackMonths} months`
+          : '',
+        typeof context.spentaThreeYrTcoUsd === 'number'
+          ? `Spenta 3-Year TCO: $${Math.round(context.spentaThreeYrTcoUsd).toLocaleString()}`
+          : '',
+        typeof context.westernThreeYrTcoUsd === 'number'
+          ? `Western Cloud/Agency 3-Year TCO: $${Math.round(context.westernThreeYrTcoUsd).toLocaleString()}`
+          : '',
+      ].filter(Boolean)
+    : [];
+
+  const fullPrompt =
+    contextLines.length > 0
+      ? `${cleanQuery}\n\nSpenta Internal Benchmark Context:\n${contextLines.map((l) => `- ${l}`).join('\n')}`
+      : cleanQuery;
+
   const response = await withRetry(() =>
     ai.models.generateContent({
       model: 'gemini-4-hydrogen',
-      contents: cleanQuery,
+      contents: fullPrompt,
       config: {
         systemInstruction:
-          'You are a concise enterprise technology and ROI benchmark analyst supporting Spenta Technology (spenta.tech). Provide an up-to-date, fact-checked executive brief grounded in Google Search results covering AI, ERP, Healthcare, Spatial XR, and Fintech TCO/ROI benchmarks in 4-5 crisp Markdown bullet points. Always distinguish live external benchmarks from Spenta internal projections.',
+          'You are a concise enterprise technology and ROI benchmark analyst supporting Spenta Technology (spenta.tech). Provide an up-to-date, fact-checked executive brief grounded in Google Search results covering AI, ERP, Healthcare, Spatial XR, and Fintech TCO/ROI benchmarks in 4-5 crisp Markdown bullet points. Always distinguish live external benchmarks (with dates/sources) from Spenta internal projections.',
         tools: [{ googleSearch: {} }],
       },
     }),

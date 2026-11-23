@@ -70,8 +70,34 @@ async function startServer() {
   // Dedicated Google Search Grounding market & ROI benchmark endpoint (gemini-4-hydrogen)
   app.post('/api/gemini/search-grounding', async (req, res) => {
     try {
-      const query = typeof req.body?.query === 'string' ? req.body.query : '';
-      const result = await runSearchGroundedBrief(query);
+      const body = req.body || {};
+      const query = typeof body.query === 'string' ? body.query : '';
+      const rawCtx = body.context && typeof body.context === 'object' ? body.context : undefined;
+      const context = rawCtx
+        ? {
+            productName: typeof rawCtx.productName === 'string' ? rawCtx.productName : undefined,
+            scenarioLabel: typeof rawCtx.scenarioLabel === 'string' ? rawCtx.scenarioLabel : undefined,
+            modeledRoiPct:
+              typeof rawCtx.modeledRoiPct === 'number' && Number.isFinite(rawCtx.modeledRoiPct)
+                ? rawCtx.modeledRoiPct
+                : undefined,
+            paybackMonths:
+              typeof rawCtx.paybackMonths === 'number' && Number.isFinite(rawCtx.paybackMonths)
+                ? rawCtx.paybackMonths
+                : undefined,
+            spentaThreeYrTcoUsd:
+              typeof rawCtx.spentaThreeYrTcoUsd === 'number' &&
+              Number.isFinite(rawCtx.spentaThreeYrTcoUsd)
+                ? rawCtx.spentaThreeYrTcoUsd
+                : undefined,
+            westernThreeYrTcoUsd:
+              typeof rawCtx.westernThreeYrTcoUsd === 'number' &&
+              Number.isFinite(rawCtx.westernThreeYrTcoUsd)
+                ? rawCtx.westernThreeYrTcoUsd
+                : undefined,
+          }
+        : undefined;
+      const result = await runSearchGroundedBrief(query, context);
       return res.json(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Search grounding request failed.';

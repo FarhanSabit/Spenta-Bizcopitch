@@ -2,22 +2,30 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Bar,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Legend,
   Line,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
 import {
+  ArrowRight,
   ArrowUpDown,
   Calculator,
   Check,
   Copy,
   Download,
+  ExternalLink,
   FileText,
+  Globe2,
+  Loader2,
   MapPin,
+  Navigation,
   Plus,
   Printer,
   ShieldCheck,
@@ -31,7 +39,12 @@ import {
   SPENTA_APPS,
   SPENTA_LOGO_URL,
 } from '../data/spentaManifest';
-import { computeProductRoi } from '../data/roiModel';
+import {
+  REVENUE_SCOPES,
+  REGIONAL_HUBS,
+  RevenueScopeId,
+  computeProductRoi,
+} from '../data/roiModel';
 import { useStack } from '../store/StackContext';
 import {
   QuarterRow,
@@ -39,8 +52,23 @@ import {
   exportQuarterlySummaryToPdf,
 } from '../utils/exportQuarterlySummaryPdf';
 import { copyTextWithFallback } from '../utils/shareUrlCodec';
-import { RoiRevenueModeler } from './RoiRevenueModeler';
-import { RegionalMarketMapsView } from './RegionalMarketMapsView';
+import {
+  BenchmarkVerifyPayload,
+  MixPresetId,
+  RoiRevenueModeler,
+  SharedSearchBenchmarkState,
+} from './RoiRevenueModeler';
+import {
+  BUILD_SCOPE_IDS,
+  DEFAULT_MIX_WEIGHTS,
+  DEFAULT_PRESET_OPEX,
+  PRESET_REVENUE_SCALE_K,
+} from './RevenueMixModeler';
+import {
+  MapsQueryPayload,
+  RegionalMarketMapsView,
+  SharedMapsMarketState,
+} from './RegionalMarketMapsView';
 
 type ScenarioMode = 'conservative' | 'upside';
 type SortField = 'gmPct' | 'setupUsd' | 'minServerTier' | 'name';
@@ -57,6 +85,40 @@ const QUARTER_WEIGHTS: { quarter: QuarterKey; weight: number }[] = [
 function formatCompactUsdK(valK: number): string {
   if (valK >= 1000) return `$${(valK / 1000).toFixed(2)}M`;
   return `$${valK.toFixed(1)}K`;
+}
+
+function renderGroundedMarkdown(text: string) {
+  const lines = text.split('\n').filter((line) => line.trim().length > 0);
+  return (
+    <div className="space-y-1.5 text-xs leading-relaxed text-[#334155] dark:text-[#C8D0E4]">
+      {lines.slice(0, 8).map((raw, idx) => {
+        const cleaned = raw.replace(/^#{1,3}\s*/, '').replace(/^[-*•]\s*/, '').trim();
+        const isBullet = /^[-*•]\s/.test(raw.trim());
+        const parts = cleaned.split(/(\*\*[^*]+\*\*)/g);
+        return (
+          <p key={idx} className={isBullet ? 'pl-3 relative' : ''}>
+            {isBullet && (
+              <span
+                aria-hidden="true"
+                className="absolute left-0 top-0 text-[#1C6E46] dark:text-[#6FCB9F] font-bold"
+              >
+                ·
+              </span>
+            )}
+            {parts.map((part, pIdx) =>
+              part.startsWith('**') && part.endsWith('**') ? (
+                <strong key={pIdx} className="font-semibold text-[#16213A] dark:text-[#E7EBF5]">
+                  {part.slice(2, -2)}
+                </strong>
+              ) : (
+                <React.Fragment key={pIdx}>{part}</React.Fragment>
+              ),
+            )}
+          </p>
+        );
+      })}
+    </div>
+  );
 }
 
 export function FinancialsView() {
@@ -76,7 +138,224 @@ export function FinancialsView() {
   const [summaryQuarter, setSummaryQuarter] = useState<QuarterKey>('Q4');
   const [copiedSummary, setCopiedSummary] = useState<boolean>(false);
 
+  // Server-side Google Search (Live ROI Benchmarks) state inside FinancialsView
+  const [benchmarkAppId, setBenchmarkAppId] = useState<string>(SPENTA_APPS[0].id);
+  const [searchBenchmark, setSearchBenchmark] = useState<SharedSearchBenchmarkState>({
+    loading: false,
+    error: null,
+    data: null,
+    subject: '',
+  });
+
+  // Server-side Google Maps (Client Market Data) state inside FinancialsView
+  const [quickHubId, setQuickHubId] = useState<'san-jose' | 'sydney' | 'dhaka'>('dhaka');
+  const [quickUserCoords, setQuickUserCoords] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [mapsMarket, setMapsMarket] = useState<SharedMapsMarketState>({
+    loading: false,
+    error: null,
+    result: null,
+    activePromptLabel: '',
+    activeHubLabel: REGIONAL_HUBS[2].name,
+  });
+
+  // Shared 5-Scope Revenue Mix Modeler state (synced between FinancialsView PieChart and RevenueMixModeler)
+  const [mixPreset, setMixPreset] = useState<MixPresetId>('fy31');
+  const [mixScopeWeights, setMixScopeWeights] = useState<Record<RevenueScopeId, number>>(
+    () => DEFAULT_MIX_WEIGHTS.fy31,
+  );
+  const [mixOpexRatioPct, setMixOpexRatioPct] = useState<number>(DEFAULT_PRESET_OPEX.fy31);
+
+  const handleApplyMixPreset = (preset: MixPresetId) => {
+    setMixPreset(preset);
+    setMixScopeWeights(DEFAULT_MIX_WEIGHTS[preset]);
+    setMixOpexRatioPct(DEFAULT_PRESET_OPEX[preset]);
+  };
+
+  const handleChangeMixScopeWeight = (scopeId: RevenueScopeId, value: number) => {
+    setMixScopeWeights((prev) => ({ ...prev, [scopeId]: value }));
+  };
+
+  const revenueMixPieData = useMemo(() => {
+    const totalWeight = Object.values(mixScopeWeights).reduce((s, v) => s + v, 0) || 1;
+    const scaleK = PRESET_REVENUE_SCALE_K[mixPreset].totalRevK;
+    let totalGpK = 0;
+    let buildRevK = 0;
+    let recurringRevK = 0;
+
+    const slices = REVENUE_SCOPES.map((scope) => {
+      const sharePct = (mixScopeWeights[scope.id] / totalWeight) * 100;
+      const revK = (sharePct / 100) * scaleK;
+      const gpK = revK * (scope.grossMarginPct / 100);
+      totalGpK += gpK;
+      if (BUILD_SCOPE_IDS.includes(scope.id)) buildRevK += revK;
+      else recurringRevK += revK;
+      return {
+        ...scope,
+        sharePct: Number(sharePct.toFixed(1)),
+        revK: Number(revK.toFixed(1)),
+        gpK: Number(gpK.toFixed(1)),
+        gmContributionPct: Number(((sharePct / 100) * scope.grossMarginPct).toFixed(1)),
+      };
+    });
+
+    const weightedGmPct = scaleK > 0 ? Number(((totalGpK / scaleK) * 100).toFixed(1)) : 0;
+    const impliedEbitdaPct = Number((weightedGmPct - mixOpexRatioPct).toFixed(1));
+    const recurringSharePct = scaleK > 0 ? Number(((recurringRevK / scaleK) * 100).toFixed(1)) : 0;
+    const buildSharePct = Number((100 - recurringSharePct).toFixed(1));
+
+    return {
+      slices,
+      scaleK,
+      scaleLabel: PRESET_REVENUE_SCALE_K[mixPreset].label,
+      weightedGmPct,
+      impliedEbitdaPct,
+      buildSharePct,
+      recurringSharePct,
+      totalGpK: Number(totalGpK.toFixed(1)),
+    };
+  }, [mixScopeWeights, mixPreset, mixOpexRatioPct]);
+
   const isDark = theme === 'dark';
+
+  const handleFetchSearchBenchmarks = async (payload: BenchmarkVerifyPayload) => {
+    setSearchBenchmark((prev) => ({
+      ...prev,
+      loading: true,
+      error: null,
+      subject: payload.subject,
+    }));
+    try {
+      const res = await fetch('/api/gemini/search-grounding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: payload.query,
+          context: {
+            ...payload.context,
+            scenarioLabel:
+              scenario === 'conservative'
+                ? 'Conservative Base (~0.5825x 5Y avg)'
+                : 'Healthcare Upside ($4.80M Y3)',
+          },
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json?.error || 'Live ROI benchmark verification failed.');
+      }
+      setSearchBenchmark({
+        loading: false,
+        error: null,
+        subject: payload.subject,
+        data: {
+          text: json.text || '',
+          sources: Array.isArray(json.sources) ? json.sources : [],
+          searchQueries: Array.isArray(json.searchQueries) ? json.searchQueries : [],
+        },
+      });
+    } catch (err) {
+      setSearchBenchmark((prev) => ({
+        ...prev,
+        loading: false,
+        error: err instanceof Error ? err.message : 'Unable to reach Search grounding service.',
+      }));
+    }
+  };
+
+  const handleFetchMapsMarketData = async (payload: MapsQueryPayload) => {
+    setMapsMarket((prev) => ({
+      ...prev,
+      loading: true,
+      error: null,
+      activePromptLabel: payload.label,
+      activeHubLabel: payload.hubLabel,
+    }));
+    try {
+      const res = await fetch('/api/gemini/maps-grounding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: payload.query,
+          hubLabel: payload.hubLabel,
+          latLng: payload.latLng,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json?.error || 'Client market Maps grounding request failed.');
+      }
+      setMapsMarket({
+        loading: false,
+        error: null,
+        activePromptLabel: payload.label,
+        activeHubLabel: payload.hubLabel,
+        result: {
+          text: json.text || '',
+          sources: Array.isArray(json.sources) ? json.sources : [],
+        },
+      });
+    } catch (err) {
+      setMapsMarket((prev) => ({
+        ...prev,
+        loading: false,
+        error: err instanceof Error ? err.message : 'Unable to reach Maps grounding service.',
+      }));
+    }
+  };
+
+  const handleQuickBenchmarkCheck = () => {
+    const app = SPENTA_APPS.find((a) => a.id === benchmarkAppId) ?? SPENTA_APPS[0];
+    const roi = computeProductRoi(app.id);
+    void handleFetchSearchBenchmarks({
+      subject: app.name,
+      query: `Verify 2026 enterprise industry ROI, implementation timeline, and 3-year TCO benchmarks for ${app.name} (${app.tagline}) versus Spenta Sovereign OS (${app.setupLabel}, ${app.recurringLabel}, ${app.gmPct.toFixed(1)}% GM, modeled 12-month client ROI ${roi.client12MoRoiPct}%, payback ${roi.paybackMonths} months, 3-yr TCO $${(roi.spenta3YrTcoUsd / 1000).toFixed(1)}K vs Western equivalent $${(roi.western3YrTcoUsd / 1000).toFixed(1)}K).`,
+      context: {
+        productName: app.name,
+        modeledRoiPct: roi.client12MoRoiPct,
+        paybackMonths: roi.paybackMonths,
+        spentaThreeYrTcoUsd: roi.spenta3YrTcoUsd,
+        westernThreeYrTcoUsd: roi.western3YrTcoUsd,
+      },
+    });
+  };
+
+  const handleQuickMarketFetch = (presetIndex = 0) => {
+    const hub = REGIONAL_HUBS.find((h) => h.id === quickHubId) ?? REGIONAL_HUBS[2];
+    const preset = hub.presetQueries[presetIndex] ?? hub.presetQueries[0];
+    const coords = quickUserCoords ?? { latitude: hub.latitude, longitude: hub.longitude };
+    void handleFetchMapsMarketData({
+      query: preset.prompt,
+      label: preset.label,
+      hubLabel: quickUserCoords ? 'Current User Location' : hub.name,
+      latLng: coords,
+    });
+  };
+
+  const handleQuickGeolocate = () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords = {
+          latitude: Number(pos.coords.latitude.toFixed(5)),
+          longitude: Number(pos.coords.longitude.toFixed(5)),
+        };
+        setQuickUserCoords(coords);
+        void handleFetchMapsMarketData({
+          query: `Identify major enterprise hospitals, regulated banks, or industrial technology centers near these coordinates suitable for Spenta Sovereign OS on-premises AI and ERP deployments.`,
+          label: 'Enterprise Prospects Near Me',
+          hubLabel: `Current Location (${coords.latitude}, ${coords.longitude})`,
+          latLng: coords,
+        });
+      },
+      () => {
+        setQuickUserCoords(null);
+      },
+      { timeout: 8000 },
+    );
+  };
 
   useEffect(() => {
     if (!summaryOpen) return;
@@ -354,9 +633,29 @@ export function FinancialsView() {
         })}
       </nav>
 
-      {subTab === 'roi' && <RoiRevenueModeler key={roiInitialAppId} initialAppId={roiInitialAppId} />}
+      {subTab === 'roi' && (
+        <RoiRevenueModeler
+          key={roiInitialAppId}
+          initialAppId={roiInitialAppId}
+          sharedBenchmark={searchBenchmark}
+          onVerifyBenchmarks={handleFetchSearchBenchmarks}
+          revenueMixProps={{
+            activePreset: mixPreset,
+            scopeWeights: mixScopeWeights,
+            targetOpexRatioPct: mixOpexRatioPct,
+            onApplyPreset: handleApplyMixPreset,
+            onChangeScopeWeight: handleChangeMixScopeWeight,
+            onChangeOpexRatio: setMixOpexRatioPct,
+          }}
+        />
+      )}
 
-      {subTab === 'maps' && <RegionalMarketMapsView />}
+      {subTab === 'maps' && (
+        <RegionalMarketMapsView
+          sharedMaps={mapsMarket}
+          onRunMapsQuery={handleFetchMapsMarketData}
+        />
+      )}
 
       {subTab === 'pnl' && (
         <>
@@ -714,6 +1013,166 @@ export function FinancialsView() {
         </section>
       </div>
 
+      {/* 5-Scope Revenue Mix Modeler — Dynamic Responsive Recharts Pie Chart */}
+      <section className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-5 sm:p-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-[#E4DFD6] dark:border-[#232B4A]">
+          <div>
+            <div className="text-xs font-mono text-[#1C6E46] dark:text-[#6FCB9F] font-semibold">
+              5-Scope Revenue Architecture · Dynamic Recharts Pie Breakdown
+            </div>
+            <h2 className="text-base sm:text-lg font-bold text-[#16213A] dark:text-[#E7EBF5] mt-0.5">
+              Revenue Scope Mix &amp; Revenue-Weighted Gross Margin Bridge
+            </h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {(
+              [
+                { id: 'fy27', label: 'FY2027 ($672K)' },
+                { id: 'fy31', label: 'FY2031 ($5.85M)' },
+                { id: 'arr-heavy', label: 'Upside ($9.60M)' },
+              ] as const
+            ).map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => handleApplyMixPreset(id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  mixPreset === id
+                    ? 'bg-[#1C6E46] dark:bg-[#6FCB9F] text-white dark:text-[#0B1020]'
+                    : 'bg-[#FAF8F4] dark:bg-[#0B1020] text-[#4A5568] dark:text-[#C8D0E4] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863]'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setSubTab('roi')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0B1020] hover:border-[#1F3863] text-xs font-semibold text-[#1F3863] dark:text-[#8FA6E8] whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <span>Tune Scope Sliders</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-5 items-center">
+          {/* Left: Dynamic Responsive Donut Pie Chart */}
+          <div className="lg:col-span-5 relative h-[260px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={revenueMixPieData.slices}
+                  dataKey="sharePct"
+                  nameKey="shortName"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius="56%"
+                  outerRadius="84%"
+                  paddingAngle={2}
+                  stroke={isDark ? '#141A32' : '#FFFFFF'}
+                  strokeWidth={2}
+                >
+                  {revenueMixPieData.slices.map((slice) => (
+                    <Cell key={slice.id} fill={slice.accent} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(val, _name, item) => {
+                    const p = item?.payload as
+                      | { revK?: number; grossMarginPct?: number; gmContributionPct?: number }
+                      | undefined;
+                    return [
+                      `${Number(val ?? 0).toFixed(1)}% · ${formatCompactUsdK(p?.revK ?? 0)} (${p?.grossMarginPct ?? 0}% GM)`,
+                      'Scope Share',
+                    ];
+                  }}
+                  contentStyle={{
+                    borderRadius: '10px',
+                    backgroundColor: isDark ? '#141A32' : '#FFFFFF',
+                    border: isDark ? '1px solid #232B4A' : '1px solid #E4DFD6',
+                    color: isDark ? '#E7EBF5' : '#16213A',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fontSize: '12px',
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            {/* Center KPI Overlay */}
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#5F6576] dark:text-[#8E96B0]">
+                Rev-Wtd GM
+              </span>
+              <span className="font-mono text-2xl font-extrabold text-[#1C6E46] dark:text-[#6FCB9F] tabular-nums">
+                {revenueMixPieData.weightedGmPct.toFixed(1)}%
+              </span>
+              <span className="text-[10px] font-mono text-[#5F6576] dark:text-[#8E96B0] tabular-nums">
+                {formatCompactUsdK(revenueMixPieData.scaleK)} Rev
+              </span>
+            </div>
+          </div>
+
+          {/* Right: 5-Scope Tabular Legend + Build vs. Recurring Annuity Summary */}
+          <div className="lg:col-span-7 space-y-4">
+            <div className="grid grid-cols-3 gap-3 text-xs font-mono tabular-nums">
+              <div className="rounded-lg bg-[#FAF8F4] dark:bg-[#0F1529] border border-[#E4DFD6] dark:border-[#232B4A] p-3">
+                <div className="text-[10px] text-[#5F6576] dark:text-[#8E96B0]">Build &amp; Captive</div>
+                <div className="text-base font-bold text-[#1F3863] dark:text-[#8FA6E8] mt-0.5">
+                  {revenueMixPieData.buildSharePct.toFixed(1)}%
+                </div>
+              </div>
+              <div className="rounded-lg bg-[#FAF8F4] dark:bg-[#0F1529] border border-[#E4DFD6] dark:border-[#232B4A] p-3">
+                <div className="text-[10px] text-[#5F6576] dark:text-[#8E96B0]">
+                  SaaS, Retainers &amp; IP
+                </div>
+                <div className="text-base font-bold text-[#1C6E46] dark:text-[#6FCB9F] mt-0.5">
+                  {revenueMixPieData.recurringSharePct.toFixed(1)}%
+                </div>
+              </div>
+              <div className="rounded-lg bg-[#FAF8F4] dark:bg-[#0F1529] border border-[#E4DFD6] dark:border-[#232B4A] p-3">
+                <div className="text-[10px] text-[#5F6576] dark:text-[#8E96B0]">Implied EBITDA</div>
+                <div className="text-base font-bold text-[#16213A] dark:text-[#E7EBF5] mt-0.5">
+                  {revenueMixPieData.impliedEbitdaPct.toFixed(1)}%
+                </div>
+              </div>
+            </div>
+
+            <div className="divide-y divide-[#EFEBE3] dark:divide-[#1E2642] border-y border-[#E4DFD6] dark:border-[#232B4A]">
+              {revenueMixPieData.slices.map((slice) => (
+                <div
+                  key={slice.id}
+                  className="py-2.5 flex items-center justify-between gap-3 text-xs"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span
+                      className="w-2.5 h-2.5 rounded-sm shrink-0"
+                      style={{ backgroundColor: slice.accent }}
+                      aria-hidden="true"
+                    />
+                    <div className="min-w-0">
+                      <div className="font-semibold text-[#16213A] dark:text-[#E7EBF5] truncate">
+                        {slice.name}
+                      </div>
+                      <div className="text-[11px] text-[#5F6576] dark:text-[#8E96B0] truncate">
+                        {slice.roleSummary}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right font-mono tabular-nums shrink-0">
+                    <div className="font-bold text-[#16213A] dark:text-[#E7EBF5]">
+                      {slice.sharePct.toFixed(1)}% · {formatCompactUsdK(slice.revK)}
+                    </div>
+                    <div className="text-[11px] text-[#1C6E46] dark:text-[#6FCB9F]">
+                      {slice.grossMarginPct}% GM (+{slice.gmContributionPct.toFixed(1)} pts)
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Financial & ROI Audit Reconciliation Ledger */}
       <section className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -969,6 +1428,239 @@ export function FinancialsView() {
               })}
             </tbody>
           </table>
+        </div>
+      </section>
+
+      {/* Live Grounded Market Intelligence — Server-Side Google Search (ROI Benchmarks) & Google Maps (Client Markets) */}
+      <section className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-5 sm:p-6 space-y-5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-[#E4DFD6] dark:border-[#232B4A]">
+          <div>
+            <div className="text-xs font-mono text-[#1C6E46] dark:text-[#6FCB9F] font-semibold">
+              Server-Side Live Grounding · Google Search Benchmarks &amp; Google Maps Client Discovery
+            </div>
+            <h2 className="text-base sm:text-lg font-bold text-[#16213A] dark:text-[#E7EBF5] mt-0.5">
+              Live External ROI Benchmarks &amp; Regional Client Market Intelligence
+            </h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setSubTab('roi')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0B1020] hover:border-[#1F3863] text-xs font-semibold text-[#1F3863] dark:text-[#8FA6E8] whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <span>Full ROI &amp; 5-Scope Modeler</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setSubTab('maps')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0B1020] hover:border-[#1C6E46] text-xs font-semibold text-[#1C6E46] dark:text-[#6FCB9F] whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <span>Full Maps Hub Explorer</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Panel 1: Google Search Live ROI Benchmarks */}
+          <div className="rounded-xl bg-[#FAF8F4] dark:bg-[#0F1529] border border-[#E4DFD6] dark:border-[#232B4A] p-4 flex flex-col justify-between gap-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#16213A] dark:text-[#E7EBF5]">
+                  <Globe2 className="w-4 h-4 text-[#1F3863] dark:text-[#8FA6E8]" />
+                  <span>Live ROI &amp; TCO Benchmarks (Google Search)</span>
+                </span>
+                <span className="text-[11px] font-mono text-[#5F6576] dark:text-[#8E96B0]">
+                  Cited Web Data
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <select
+                  aria-label="Select Spenta solution for live ROI benchmark check"
+                  value={benchmarkAppId}
+                  onChange={(e) => setBenchmarkAppId(e.target.value)}
+                  className="flex-1 rounded-lg bg-white dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] px-3 py-2 text-xs font-semibold text-[#16213A] dark:text-[#E7EBF5] focus:outline-none focus:border-[#1F3863]"
+                >
+                  {SPENTA_APPS.map((app) => (
+                    <option key={app.id} value={app.id}>
+                      {app.shortName} ({app.gmPct.toFixed(1)}% GM · {app.setupLabel})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={searchBenchmark.loading}
+                  onClick={handleQuickBenchmarkCheck}
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#1F3863] hover:bg-[#162848] dark:bg-[#8FA6E8] dark:hover:bg-[#A6B9F0] text-white dark:text-[#0B1020] text-xs font-semibold whitespace-nowrap shrink-0 disabled:opacity-60 cursor-pointer"
+                >
+                  {searchBenchmark.loading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Calculator className="w-3.5 h-3.5" />
+                  )}
+                  <span>{searchBenchmark.loading ? 'Fetching…' : 'Fetch ROI Benchmarks'}</span>
+                </button>
+              </div>
+
+              {searchBenchmark.error && (
+                <div className="text-xs text-[#E11D48] dark:text-[#FDA4AF] bg-[#E11D48]/10 border border-[#E11D48]/25 rounded-lg px-3 py-2">
+                  {searchBenchmark.error}
+                </div>
+              )}
+
+              {searchBenchmark.loading ? (
+                <div className="space-y-2 py-2 animate-pulse">
+                  <div className="h-3 bg-[#E4DFD6] dark:bg-[#232B4A] rounded w-3/4" />
+                  <div className="h-3 bg-[#E4DFD6] dark:bg-[#232B4A] rounded w-full" />
+                  <div className="h-3 bg-[#E4DFD6] dark:bg-[#232B4A] rounded w-5/6" />
+                </div>
+              ) : searchBenchmark.data ? (
+                <div className="space-y-3 pt-2 border-t border-[#E4DFD6] dark:border-[#232B4A]">
+                  <div className="text-[11px] font-mono text-[#1C6E46] dark:text-[#6FCB9F]">
+                    Verified Benchmark Subject: {searchBenchmark.subject}
+                  </div>
+                  {renderGroundedMarkdown(searchBenchmark.data.text)}
+                  {searchBenchmark.data.sources.length > 0 && (
+                    <div className="pt-2 border-t border-[#E4DFD6] dark:border-[#232B4A] flex flex-wrap gap-1.5">
+                      {searchBenchmark.data.sources.slice(0, 5).map((src, idx) => (
+                        <a
+                          key={`${src.uri}-${idx}`}
+                          href={src.uri}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-[#1F3863] dark:text-[#8FA6E8] hover:underline bg-white dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] rounded-md px-2 py-1 max-w-[230px] truncate"
+                        >
+                          <span className="truncate">{src.title}</span>
+                          <ExternalLink className="w-3 h-3 shrink-0" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-[#5F6576] dark:text-[#8E96B0] leading-relaxed pt-1">
+                  Select any of the 13 sovereign products and fetch live 2026 external TCO, payback, and enterprise ROI benchmarks grounded in Google Search with clickable web citations.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Panel 2: Google Maps Live Client Market Data */}
+          <div className="rounded-xl bg-[#FAF8F4] dark:bg-[#0F1529] border border-[#E4DFD6] dark:border-[#232B4A] p-4 flex flex-col justify-between gap-4">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#16213A] dark:text-[#E7EBF5]">
+                  <MapPin className="w-4 h-4 text-[#1C6E46] dark:text-[#6FCB9F]" />
+                  <span>Regional Client Market Data (Google Maps)</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleQuickGeolocate}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#1C6E46] dark:text-[#6FCB9F] hover:underline cursor-pointer"
+                >
+                  <Navigation className="w-3 h-3" />
+                  <span>Near Me</span>
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                {REGIONAL_HUBS.map((hub) => {
+                  const active = quickHubId === hub.id && !quickUserCoords;
+                  return (
+                    <button
+                      key={hub.id}
+                      type="button"
+                      onClick={() => {
+                        setQuickUserCoords(null);
+                        setQuickHubId(hub.id);
+                      }}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        active
+                          ? 'bg-[#1C6E46] text-white border-[#1C6E46] dark:bg-[#6FCB9F] dark:text-[#0B1020] dark:border-[#6FCB9F]'
+                          : 'bg-white dark:bg-[#141A32] text-[#4A5568] dark:text-[#C8D0E4] border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1C6E46]'
+                      }`}
+                    >
+                      {hub.id === 'san-jose'
+                        ? 'San Jose (US)'
+                        : hub.id === 'sydney'
+                          ? 'Sydney (AU)'
+                          : 'Dhaka (BD)'}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  disabled={mapsMarket.loading}
+                  onClick={() => handleQuickMarketFetch(0)}
+                  className="ml-auto inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#1C6E46] hover:bg-[#175B3A] dark:bg-[#6FCB9F] dark:hover:bg-[#5EC092] text-white dark:text-[#0B1020] text-xs font-semibold whitespace-nowrap shrink-0 disabled:opacity-60 cursor-pointer"
+                >
+                  {mapsMarket.loading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <MapPin className="w-3.5 h-3.5" />
+                  )}
+                  <span>{mapsMarket.loading ? 'Querying…' : 'Fetch Client Market'}</span>
+                </button>
+              </div>
+
+              {mapsMarket.error && (
+                <div className="text-xs text-[#E11D48] dark:text-[#FDA4AF] bg-[#E11D48]/10 border border-[#E11D48]/25 rounded-lg px-3 py-2">
+                  {mapsMarket.error}
+                </div>
+              )}
+
+              {mapsMarket.loading ? (
+                <div className="space-y-2 py-2 animate-pulse">
+                  <div className="h-3 bg-[#E4DFD6] dark:bg-[#232B4A] rounded w-2/3" />
+                  <div className="h-3 bg-[#E4DFD6] dark:bg-[#232B4A] rounded w-full" />
+                  <div className="h-3 bg-[#E4DFD6] dark:bg-[#232B4A] rounded w-4/5" />
+                </div>
+              ) : mapsMarket.result ? (
+                <div className="space-y-3 pt-2 border-t border-[#E4DFD6] dark:border-[#232B4A]">
+                  <div className="flex items-center justify-between gap-2 text-[11px] font-mono text-[#1C6E46] dark:text-[#6FCB9F]">
+                    <span>
+                      {mapsMarket.activeHubLabel} · {mapsMarket.activePromptLabel}
+                    </span>
+                    <span className="text-[#5F6576] dark:text-[#8E96B0]">
+                      {mapsMarket.result.sources.length} places
+                    </span>
+                  </div>
+                  {renderGroundedMarkdown(mapsMarket.result.text)}
+                  {mapsMarket.result.sources.length > 0 && (
+                    <div className="pt-2 border-t border-[#E4DFD6] dark:border-[#232B4A] grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {mapsMarket.result.sources.slice(0, 4).map((place, idx) => (
+                        <a
+                          key={`${place.uri}-${idx}`}
+                          href={place.uri}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="group rounded-lg bg-white dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1C6E46] dark:hover:border-[#6FCB9F] p-2.5 flex flex-col gap-1 transition-colors"
+                        >
+                          <div className="flex items-center justify-between gap-1.5">
+                            <span className="text-[11px] font-bold text-[#16213A] dark:text-[#E7EBF5] group-hover:text-[#1C6E46] dark:group-hover:text-[#6FCB9F] truncate">
+                              {place.title}
+                            </span>
+                            <ExternalLink className="w-3 h-3 text-[#5F6576] shrink-0" />
+                          </div>
+                          {place.reviewSnippet && (
+                            <span className="text-[10px] text-[#5F6576] dark:text-[#8E96B0] line-clamp-1">
+                              “{place.reviewSnippet}”
+                            </span>
+                          )}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-[#5F6576] dark:text-[#8E96B0] leading-relaxed pt-1">
+                  Pick a Spenta operating hub (San Jose, Sydney, or Dhaka) or use your current coordinates to discover real target hospitals, banking headquarters, and industrial clusters via Google Maps grounding with clickable place links.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       </section>
         </>
