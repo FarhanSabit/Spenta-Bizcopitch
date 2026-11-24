@@ -1,23 +1,58 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { Link2, RefreshCw, RotateCcw, WifiOff, X } from 'lucide-react';
 import { SPENTA_CONTACT_EMAIL } from './data/spentaManifest';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { StackProvider, useStack } from './store/StackContext';
 import { Navbar } from './components/Navbar';
 import { StackComposerDrawer } from './components/StackComposerDrawer';
-import { SpentaBrainVault } from './components/SpentaBrainVault';
-import { InfographicsView } from './components/InfographicsView';
-import { FinancialsView } from './components/FinancialsView';
-import { SpentaCoreView } from './components/SpentaCoreView';
-import { TheBrainView } from './components/TheBrainView';
-import { PitchDeckView } from './components/PitchDeckView';
-import { ResourcesView } from './components/ResourcesView';
 import { SpentaLogo } from './components/SpentaLogo';
-import { SpentaAiAssistant } from './components/SpentaAiAssistant';
 import { GlobalSearchBar } from './components/GlobalSearchBar';
 import { SpentaThemeView } from './components/SpentaThemeView';
 import { MobileGridToggle } from './components/MobileGridToggle';
 import { ResilientErrorBoundary } from './components/ResilientErrorBoundary';
+
+const SpentaBrainVault = lazy(() =>
+  import('./components/SpentaBrainVault').then((m) => ({ default: m.SpentaBrainVault })),
+);
+const InfographicsView = lazy(() =>
+  import('./components/InfographicsView').then((m) => ({ default: m.InfographicsView })),
+);
+const FinancialsView = lazy(() =>
+  import('./components/FinancialsView').then((m) => ({ default: m.FinancialsView })),
+);
+const SpentaCoreView = lazy(() =>
+  import('./components/SpentaCoreView').then((m) => ({ default: m.SpentaCoreView })),
+);
+const TheBrainView = lazy(() =>
+  import('./components/TheBrainView').then((m) => ({ default: m.TheBrainView })),
+);
+const PitchDeckView = lazy(() =>
+  import('./components/PitchDeckView').then((m) => ({ default: m.PitchDeckView })),
+);
+const ResourcesView = lazy(() =>
+  import('./components/ResourcesView').then((m) => ({ default: m.ResourcesView })),
+);
+const SpentaAiAssistant = lazy(() =>
+  import('./components/SpentaAiAssistant').then((m) => ({ default: m.SpentaAiAssistant })),
+);
+
+function ViewLoadingFallback() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading view"
+      className="space-y-4 animate-pulse py-2"
+    >
+      <div className="h-24 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="h-32 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
+        <div className="h-32 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
+        <div className="h-32 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
+      </div>
+      <div className="h-64 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
+    </div>
+  );
+}
 
 interface EnvironmentNotice {
   title: string;
@@ -225,13 +260,15 @@ function PortalShell() {
           onReturnHome={activeTab !== 'App Vault' ? () => setActiveTab('App Vault') : undefined}
         >
           <SpentaThemeView viewId={activeTab}>
-            {activeTab === 'App Vault' && <SpentaBrainVault />}
-            {activeTab === 'Infographics' && <InfographicsView />}
-            {activeTab === 'Financials' && <FinancialsView />}
-            {activeTab === 'Spenta Core' && <SpentaCoreView />}
-            {activeTab === 'The Brain' && <TheBrainView />}
-            {activeTab === 'Pitch Deck' && <PitchDeckView />}
-            {activeTab === 'Resources' && <ResourcesView />}
+            <Suspense fallback={<ViewLoadingFallback />}>
+              {activeTab === 'App Vault' && <SpentaBrainVault />}
+              {activeTab === 'Infographics' && <InfographicsView />}
+              {activeTab === 'Financials' && <FinancialsView />}
+              {activeTab === 'Spenta Core' && <SpentaCoreView />}
+              {activeTab === 'The Brain' && <TheBrainView />}
+              {activeTab === 'Pitch Deck' && <PitchDeckView />}
+              {activeTab === 'Resources' && <ResourcesView />}
+            </Suspense>
           </SpentaThemeView>
         </ResilientErrorBoundary>
       </main>
@@ -271,7 +308,9 @@ function PortalShell() {
       <GlobalSearchBar />
       <StackComposerDrawer />
       <MobileGridToggle />
-      <SpentaAiAssistant />
+      <Suspense fallback={null}>
+        <SpentaAiAssistant />
+      </Suspense>
     </div>
   );
 }

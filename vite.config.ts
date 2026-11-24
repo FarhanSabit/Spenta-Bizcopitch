@@ -32,17 +32,25 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    chunkSizeWarningLimit: 900,
+    chunkSizeWarningLimit: 650,
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
           if (id.includes('/three/')) return 'vendor-three';
           if (id.includes('/recharts/') || id.includes('/d3-')) return 'vendor-charts';
-          if (id.includes('/jspdf/') || id.includes('/html2canvas/') || id.includes('/dompurify/')) {
+          if (id.includes('/jspdf/')) {
             return 'vendor-pdf';
           }
+          if (
+            id.includes('/html2canvas/') ||
+            id.includes('/dompurify/') ||
+            id.includes('/canvg/')
+          ) {
+            return 'vendor-pdf-extras';
+          }
           if (id.includes('/framer-motion/') || id.includes('/gsap/')) return 'vendor-motion';
+          if (id.includes('/lucide-react/')) return 'vendor-icons';
           if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) {
             return 'vendor-react';
           }

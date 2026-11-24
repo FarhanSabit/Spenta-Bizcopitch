@@ -2605,7 +2605,7 @@ export function FinancialsView() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => exportQuarterlySummaryToPdf(summaryData)}
+                  onClick={() => void exportQuarterlySummaryToPdf(summaryData)}
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#1C6E46] hover:bg-[#175B3A] dark:bg-[#6FCB9F] dark:hover:bg-[#5EC092] text-white dark:text-[#0B1020] text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" strokeWidth={1.75} />

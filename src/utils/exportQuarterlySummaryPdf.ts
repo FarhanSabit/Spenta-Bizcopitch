@@ -1,5 +1,3 @@
-import { jsPDF } from 'jspdf';
-
 type RGB = [number, number, number];
 
 const COLORS: Record<string, RGB> = {
@@ -84,7 +82,10 @@ function formatK(valK: number): string {
   return `$${valK.toFixed(1)}K`;
 }
 
-export function exportQuarterlySummaryToPdf(data: QuarterlyExecutiveSummaryData): void {
+export async function exportQuarterlySummaryToPdf(
+  data: QuarterlyExecutiveSummaryData,
+): Promise<void> {
+  const { jsPDF } = await import('jspdf');
   // Single-page Portrait A4 (210mm x 297mm)
   const W = 210;
   const H = 297;

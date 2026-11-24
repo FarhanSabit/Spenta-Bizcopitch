@@ -1,5 +1,7 @@
-import { jsPDF } from 'jspdf';
+import type { jsPDF as JsPDFInstance } from 'jspdf';
 import { PitchSlide, SPENTA_CONTACT_EMAIL, SPENTA_LOGO_DARK_URL, SPENTA_LOGO_URL } from '../data/spentaManifest';
+
+type jsPDF = JsPDFInstance;
 
 type RGB = [number, number, number];
 
@@ -443,10 +445,11 @@ export async function exportPitchDeckToPdf({
   filename = 'Spenta-Sovereign-OS-Investor-Deck.pdf',
   onProgress,
 }: ExportDeckOptions): Promise<void> {
+  const { jsPDF: JsPDFCtor } = await import('jspdf');
   // True 16:9 widescreen boardroom PDF (297mm x 167.06mm)
   const W = 297;
   const H = 167.06;
-  const doc = new jsPDF({
+  const doc = new JsPDFCtor({
     orientation: 'landscape',
     unit: 'mm',
     format: [W, H],
@@ -782,9 +785,12 @@ export async function downloadSerializedPrintDeckPdf(options?: {
     day: 'numeric',
   });
 
-  const logoAsset = await tryLoadLogoDataUrl(SPENTA_LOGO_URL);
+  const [logoAsset, { jsPDF: JsPDFCtor }] = await Promise.all([
+    tryLoadLogoDataUrl(SPENTA_LOGO_URL),
+    import('jspdf'),
+  ]);
 
-  const doc = new jsPDF({
+  const doc = new JsPDFCtor({
     orientation: 'landscape',
     unit: 'mm',
     format: [W, H],
