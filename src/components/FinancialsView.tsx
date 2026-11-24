@@ -9,6 +9,7 @@ import {
   LineChart,
   Pie,
   PieChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -23,6 +24,7 @@ import {
   Download,
   ExternalLink,
   FileText,
+  GitCompareArrows,
   Globe2,
   Loader2,
   MapPin,
@@ -77,6 +79,11 @@ import {
   RegionalMarketMapsView,
   SharedMapsMarketState,
 } from './RegionalMarketMapsView';
+import {
+  InvestorRoiCalculator,
+  computeInvestorRoiSeries,
+  formatUsdFromK,
+} from './InvestorRoiCalculator';
 
 type ScenarioMode = 'conservative' | 'upside';
 type SortField = 'gmPct' | 'setupUsd' | 'minServerTier' | 'name';
@@ -136,6 +143,10 @@ export function FinancialsView() {
   const [taxRate, setTaxRate] = useState<number>(25);
   const [exitMultiple, setExitMultiple] = useState<number>(10);
   const [dilutionPct, setDilutionPct] = useState<number>(0);
+  const [investmentK, setInvestmentK] = useState<number>(500);
+  const [horizonYears, setHorizonYears] = useState<number>(5);
+  const [compareGrowthScenarios, setCompareGrowthScenarios] = useState<boolean>(false);
+  const [projectedChartMetric, setProjectedChartMetric] = useState<'value' | 'moic'>('value');
   const [sortField, setSortField] = useState<SortField>('gmPct');
   const [sortAsc, setSortAsc] = useState<boolean>(false);
   const [subTab, setSubTab] = useState<FinancialsSubTab>('pnl');
@@ -522,6 +533,15 @@ export function FinancialsView() {
   const y1 = modeledSeries[0];
   const y4 = modeledSeries[3];
   const y5 = modeledSeries[4];
+  const horizonSeries = useMemo(
+    () => modeledSeries.slice(0, horizonYears),
+    [modeledSeries, horizonYears],
+  );
+  const horizonScopeSeries = useMemo(
+    () => fiveYearScopeSeries.slice(0, horizonYears),
+    [fiveYearScopeSeries, horizonYears],
+  );
+  const horizonRow = horizonSeries[horizonSeries.length - 1] ?? y5;
   const dhakaY1UsdK = Number((64800 / fxRate).toFixed(1));
   const dhakaLoadedHourlyUsd = Number(((dhakaY1UsdK * 1000) / 41600).toFixed(2));
   // $500K SAFE at $4.5M post-money cap = 11.11% pre-dilution; adjusted for subsequent round dilution
@@ -538,6 +558,29 @@ export function FinancialsView() {
     ((y5.ebitdaK * 10 * preDilutionOwnership * 0.8) / 500).toFixed(2),
   );
   const safeRoiAt15xPreDil = Number(((y5.ebitdaK * 15 * preDilutionOwnership) / 500).toFixed(2));
+
+  // Dynamic investor-tier & horizon-synced metrics for KPI strip
+  const tierOwnership = (investmentK / 4500) * (1 - dilutionPct / 100);
+  const tierOwnershipPct = Number((tierOwnership * 100).toFixed(2));
+  const horizonExitEvM = Number(((horizonRow.ebitdaK * exitMultiple) / 1000).toFixed(2));
+  const tierProceedsK = horizonRow.ebitdaK * exitMultiple * tierOwnership;
+  const tierProceedsM = Number((tierProceedsK / 1000).toFixed(2));
+  const tierRoiMultiple = investmentK > 0 ? Number((tierProceedsK / investmentK).toFixed(2)) : 0;
+
+  const investorRoiSeries = useMemo(
+    () =>
+      computeInvestorRoiSeries({
+        modeledSeries,
+        scenario,
+        horizonYears,
+        exitMultiple,
+        dilutionPct,
+        investmentK,
+        fxRate,
+      }),
+    [modeledSeries, scenario, horizonYears, exitMultiple, dilutionPct, investmentK, fxRate],
+  );
+  const terminalRoiPoint = investorRoiSeries[investorRoiSeries.length - 1] ?? investorRoiSeries[0];
 
   const summaryData = useMemo<QuarterlyExecutiveSummaryData>(() => {
     const activeRow = modeledSeries[summaryYearIndex] ?? modeledSeries[0];
@@ -745,6 +788,22 @@ export function FinancialsView() {
             </button>
           </div>
 
+          {subTab === 'pnl' && (
+            <button
+              type="button"
+              onClick={() => setCompareGrowthScenarios((prev) => !prev)}
+              aria-pressed={compareGrowthScenarios}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 sm:py-2 rounded-xl border text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                compareGrowthScenarios
+                  ? 'bg-[#1C6E46] text-white border-[#1C6E46] dark:bg-[#6FCB9F] dark:text-[#0B1020] dark:border-[#6FCB9F]'
+                  : 'bg-[#F2EFE9] dark:bg-[#0F1529] border-[#E4DFD6] dark:border-[#232B4A] text-[#16213A] dark:text-[#E7EBF5] hover:border-[#1C6E46] dark:hover:border-[#6FCB9F]'
+              }`}
+            >
+              <GitCompareArrows className="w-3.5 h-3.5" strokeWidth={1.75} />
+              <span>Compare Growth Scenarios</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleExportFiveYearCsv}
@@ -829,51 +888,348 @@ export function FinancialsView() {
       <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="rounded-2xl p-5 bg-[#1F3863] dark:bg-[#141A32] text-white border border-[#1F3863] dark:border-[#6FCB9F]/40">
           <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-[#A7E6C6] dark:text-[#6FCB9F]">
-            Capital Ask · {dilutionPct === 0 ? 'Post-Money Cap' : `${dilutionPct}% Post-Seed Dil.`}
+            Selected Ticket · {dilutionPct === 0 ? 'Post-Money Cap' : `${dilutionPct}% Post-Seed Dil.`}
           </div>
           <div className="font-mono text-2xl sm:text-3xl font-extrabold mt-1 tabular-nums">
-            $500K SAFE
+            ${investmentK}K SAFE
           </div>
           <div className="text-xs text-[#C6D2EE] dark:text-[#8E96B0] font-mono mt-1 tabular-nums">
-            $4.5M Post-Cap ({effectiveOwnershipPct.toFixed(2)}% eff.) · 20% Disc.
+            $4.5M Cap ({tierOwnershipPct.toFixed(2)}% eff.) · 20% Disc.
           </div>
         </div>
 
         <div className="rounded-2xl p-5 bg-white dark:bg-[#141A32] border border-[#1C6E46]/35 dark:border-[#6FCB9F]/35">
           <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-[#1C6E46] dark:text-[#6FCB9F]">
-            Investor SAFE Equity ROI ({exitMultiple}× EV)
+            Investor SAFE ROI ({horizonRow.year} · {exitMultiple}× EV)
           </div>
           <div className="font-mono text-2xl sm:text-3xl font-extrabold text-[#1C6E46] dark:text-[#6FCB9F] mt-1 tabular-nums">
-            {safeEquityRoiMultiple.toFixed(2)}×
+            {tierRoiMultiple.toFixed(2)}×
           </div>
           <div className="text-xs text-[#4A5568] dark:text-[#8E96B0] font-mono mt-1 tabular-nums">
-            ${safeExitProceedsM.toFixed(2)}M proceeds · EV ${impliedExitEvM.toFixed(2)}M
+            {tierProceedsK >= 1000
+              ? `$${tierProceedsM.toFixed(2)}M`
+              : `$${Math.round(tierProceedsK).toLocaleString()}K`}{' '}
+            proceeds · EV ${horizonExitEvM.toFixed(2)}M
           </div>
         </div>
 
         <div className="rounded-2xl p-5 bg-white dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A]">
           <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-[#5F6576] dark:text-[#8E96B0]">
-            Operating Capital Efficiency (Co. Net ÷ $500K)
+            Capital Efficiency ({horizonYears}-Yr Co. Net ÷ $500K)
           </div>
           <div className="font-mono text-2xl sm:text-3xl font-extrabold text-[#16213A] dark:text-[#E7EBF5] mt-1 tabular-nums">
-            {y5.capitalEfficiencyMultiple.toFixed(2)}×
+            {horizonRow.capitalEfficiencyMultiple.toFixed(2)}×
           </div>
           <div className="text-xs text-[#4A5568] dark:text-[#8E96B0] font-mono mt-1 tabular-nums">
-            Company Cum. Net ${(y5.cumNetK / 1000).toFixed(3)}M · Y4: {y4.capitalEfficiencyMultiple.toFixed(2)}×
+            Company Cum. Net ${(horizonRow.cumNetK / 1000).toFixed(3)}M · Y4: {y4.capitalEfficiencyMultiple.toFixed(2)}×
           </div>
         </div>
 
         <div className="rounded-2xl p-5 bg-white dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A]">
           <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-[#5F6576] dark:text-[#8E96B0]">
-            FY2031 (Y5) Revenue &amp; Client ROI
+            {horizonRow.year} ({horizonRow.label}) Revenue &amp; Client ROI
           </div>
           <div className="font-mono text-2xl sm:text-3xl font-extrabold text-[#16213A] dark:text-[#E7EBF5] mt-1 tabular-nums">
-            ${(y5.revK / 1000).toFixed(2)}M
+            {formatCompactUsdK(horizonRow.revK)}
           </div>
           <div className="text-xs text-[#4A5568] dark:text-[#8E96B0] font-mono mt-1 tabular-nums">
             Y1: ${y1.revK}K · Client ROI 250–350% (Bank: 450%+)
           </div>
         </div>
+      </section>
+
+      {/* Interactive Investor ROI Calculator (Tier & 1-5 Year Horizon Modeler) */}
+      <InvestorRoiCalculator
+        modeledSeries={modeledSeries}
+        investorRoiSeries={investorRoiSeries}
+        scenario={scenario}
+        growthMode={growthMode}
+        compareGrowthScenarios={compareGrowthScenarios}
+        fxRate={fxRate}
+        taxRate={taxRate}
+        exitMultiple={exitMultiple}
+        dilutionPct={dilutionPct}
+        investmentK={investmentK}
+        horizonYears={horizonYears}
+        isDark={isDark}
+        onToggleCompareGrowthScenarios={() => setCompareGrowthScenarios((prev) => !prev)}
+        onChangeInvestmentK={setInvestmentK}
+        onChangeHorizonYears={setHorizonYears}
+        onChangeExitMultiple={setExitMultiple}
+        onChangeDilutionPct={setDilutionPct}
+      />
+
+      {/* Projected Value Over Time Line Chart (Mapped Directly from Investor ROI Calculator Yearly Data) */}
+      <section
+        aria-label="Projected Value Over Time"
+        className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-5 sm:p-6 space-y-4"
+      >
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-[#E4DFD6] dark:border-[#232B4A]">
+          <div>
+            <div className="text-[11px] font-mono uppercase tracking-[0.14em] text-[#1C6E46] dark:text-[#6FCB9F] font-semibold">
+              Yearly Investor ROI Trajectory · ${investmentK}K Allocation · {horizonYears}-Year Horizon (FY2027–{horizonRow.year})
+            </div>
+            <h2 className="text-base sm:text-lg font-extrabold text-[#16213A] dark:text-[#E7EBF5] tracking-tight mt-0.5">
+              Projected Value Over Time
+            </h2>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto shrink-0">
+            <div
+              role="group"
+              aria-label="Projected Value Over Time metric"
+              className="inline-flex rounded-lg bg-[#F2EFE9] dark:bg-[#0F1529] p-0.5 border border-[#E4DFD6] dark:border-[#232B4A]"
+            >
+              <button
+                type="button"
+                onClick={() => setProjectedChartMetric('value')}
+                aria-pressed={projectedChartMetric === 'value'}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  projectedChartMetric === 'value'
+                    ? 'bg-[#1F3863] text-white dark:bg-[#8FA6E8] dark:text-[#0B1020]'
+                    : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+                }`}
+              >
+                Equity Value ($K)
+              </button>
+              <button
+                type="button"
+                onClick={() => setProjectedChartMetric('moic')}
+                aria-pressed={projectedChartMetric === 'moic'}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  projectedChartMetric === 'moic'
+                    ? 'bg-[#1F3863] text-white dark:bg-[#8FA6E8] dark:text-[#0B1020]'
+                    : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+                }`}
+              >
+                MOIC Multiple (×)
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setCompareGrowthScenarios((prev) => !prev)}
+              aria-pressed={compareGrowthScenarios}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                compareGrowthScenarios
+                  ? 'bg-[#1C6E46] text-white border-[#1C6E46] dark:bg-[#6FCB9F] dark:text-[#0B1020] dark:border-[#6FCB9F]'
+                  : 'bg-[#FAF8F4] dark:bg-[#0F1529] border-[#E4DFD6] dark:border-[#232B4A] text-[#16213A] dark:text-[#E7EBF5] hover:border-[#1C6E46] dark:hover:border-[#6FCB9F]'
+              }`}
+            >
+              <GitCompareArrows className="w-3.5 h-3.5" strokeWidth={1.75} />
+              <span>{compareGrowthScenarios ? 'Comparing Aggressive vs. Conservative' : 'Compare Growth Scenarios'}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="h-[270px] sm:h-[310px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={investorRoiSeries}
+              margin={{ top: 12, right: 16, left: 4, bottom: 8 }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke={isDark ? '#232B4A' : '#E4DFD6'}
+                vertical={false}
+              />
+              <XAxis
+                dataKey="year"
+                tick={{
+                  fontSize: 11,
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fill: isDark ? '#8E96B0' : '#5F6576',
+                }}
+                axisLine={{ stroke: isDark ? '#232B4A' : '#E4DFD6' }}
+                tickLine={false}
+              />
+              <YAxis
+                tickFormatter={(v) => {
+                  const num = Number(v ?? 0);
+                  if (projectedChartMetric === 'moic') return `${num.toFixed(1)}×`;
+                  return num >= 1000 ? `$${(num / 1000).toFixed(1)}M` : `$${num}K`;
+                }}
+                tick={{
+                  fontSize: 11,
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fill: isDark ? '#8E96B0' : '#5F6576',
+                }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                formatter={(value, name) => {
+                  const num = Number(value ?? 0);
+                  const label = String(name ?? '');
+                  if (projectedChartMetric === 'moic') {
+                    return [`${num.toFixed(2)}×`, label];
+                  }
+                  return [formatUsdFromK(num), label];
+                }}
+                labelFormatter={(label) => {
+                  const match = investorRoiSeries.find((r) => r.year === String(label));
+                  return match
+                    ? `${match.year} (${match.label}) · Implied EV ${formatUsdFromK(match.impliedEvK)} · IRR ${match.annualizedIrrPct >= 0 ? '+' : ''}${match.annualizedIrrPct.toFixed(1)}%`
+                    : String(label);
+                }}
+                contentStyle={{
+                  borderRadius: '10px',
+                  backgroundColor: isDark ? '#141A32' : '#FFFFFF',
+                  border: isDark ? '1px solid #232B4A' : '1px solid #E4DFD6',
+                  color: isDark ? '#E7EBF5' : '#16213A',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: '12px',
+                }}
+                itemStyle={{ color: isDark ? '#E7EBF5' : '#16213A' }}
+              />
+              <Legend
+                wrapperStyle={{
+                  fontSize: '11px',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  color: isDark ? '#8E96B0' : '#5F6576',
+                }}
+              />
+              <ReferenceLine
+                y={projectedChartMetric === 'moic' ? 1 : investmentK}
+                stroke={isDark ? '#8E96B0' : '#5F6576'}
+                strokeDasharray="4 4"
+                strokeWidth={1.5}
+                label={{
+                  value: projectedChartMetric === 'moic' ? '1.0× Break-even' : `Cost Basis $${investmentK}K`,
+                  position: 'insideTopLeft',
+                  fill: isDark ? '#8E96B0' : '#5F6576',
+                  fontSize: 10,
+                  fontFamily: 'JetBrains Mono, monospace',
+                }}
+              />
+
+              {projectedChartMetric === 'value' ? (
+                compareGrowthScenarios ? (
+                  <>
+                    <Line
+                      type="monotone"
+                      dataKey="conservativeGrowthStakeK"
+                      name="Conservative Growth 1.00× ($K)"
+                      stroke={isDark ? '#8FA6E8' : '#1F3863'}
+                      strokeWidth={2.75}
+                      dot={{ r: 4, fill: isDark ? '#8FA6E8' : '#1F3863' }}
+                      activeDot={{ r: 6 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="aggressiveGrowthStakeK"
+                      name="Aggressive Growth 1.045ⁿ ($K)"
+                      stroke={isDark ? '#6FCB9F' : '#1C6E46'}
+                      strokeWidth={3}
+                      dot={{ r: 4, fill: isDark ? '#6FCB9F' : '#1C6E46' }}
+                      activeDot={{ r: 6 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="proRataCumNetK"
+                      name="Pro-Rata Cum. Net Profit ($K)"
+                      stroke={isDark ? '#F5C57B' : '#B45309'}
+                      strokeWidth={2}
+                      strokeDasharray="5 4"
+                      dot={{ r: 3, fill: isDark ? '#F5C57B' : '#B45309' }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Line
+                      type="monotone"
+                      dataKey="stakeValueK"
+                      name={`Projected Stake Value (${activeGrowthSpec.shortLabel}, $K)`}
+                      stroke={isDark ? '#6FCB9F' : '#1C6E46'}
+                      strokeWidth={3}
+                      dot={{ r: 4, fill: isDark ? '#6FCB9F' : '#1C6E46' }}
+                      activeDot={{ r: 6 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="netGainK"
+                      name="Net Gain / Loss ($K)"
+                      stroke={isDark ? '#8FA6E8' : '#1F3863'}
+                      strokeWidth={2.25}
+                      dot={{ r: 3.5, fill: isDark ? '#8FA6E8' : '#1F3863' }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="proRataCumNetK"
+                      name="Pro-Rata Cum. Net Profit ($K)"
+                      stroke={isDark ? '#F5C57B' : '#B45309'}
+                      strokeWidth={2}
+                      strokeDasharray="5 4"
+                      dot={{ r: 3, fill: isDark ? '#F5C57B' : '#B45309' }}
+                    />
+                  </>
+                )
+              ) : compareGrowthScenarios ? (
+                <>
+                  <Line
+                    type="monotone"
+                    dataKey="conservativeGrowthMoic"
+                    name="Conservative Growth MOIC (×)"
+                    stroke={isDark ? '#8FA6E8' : '#1F3863'}
+                    strokeWidth={2.75}
+                    dot={{ r: 4, fill: isDark ? '#8FA6E8' : '#1F3863' }}
+                    activeDot={{ r: 6 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="aggressiveGrowthMoic"
+                    name="Aggressive Growth MOIC (×)"
+                    stroke={isDark ? '#6FCB9F' : '#1C6E46'}
+                    strokeWidth={3}
+                    dot={{ r: 4, fill: isDark ? '#6FCB9F' : '#1C6E46' }}
+                    activeDot={{ r: 6 }}
+                  />
+                </>
+              ) : (
+                <Line
+                  type="monotone"
+                  dataKey="moic"
+                  name={`Return Multiple (${activeGrowthSpec.shortLabel}, ×)`}
+                  stroke={isDark ? '#6FCB9F' : '#1C6E46'}
+                  strokeWidth={3}
+                  dot={{ r: 4, fill: isDark ? '#6FCB9F' : '#1C6E46' }}
+                  activeDot={{ r: 6 }}
+                />
+              )}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {terminalRoiPoint && (
+          <div className="pt-3 border-t border-[#EFEBE3] dark:border-[#1E2642] flex flex-wrap items-center justify-between gap-3 text-[11px] font-mono text-[#5F6576] dark:text-[#8E96B0] tabular-nums">
+            <span>
+              Entry Check:{' '}
+              <strong className="text-[#16213A] dark:text-[#E7EBF5]">${investmentK}K</strong>{' '}
+              → {terminalRoiPoint.year} Value:{' '}
+              <strong className="text-[#1C6E46] dark:text-[#6FCB9F]">
+                {formatUsdFromK(terminalRoiPoint.stakeValueK)}
+              </strong>{' '}
+              ({terminalRoiPoint.moic.toFixed(2)}× · {terminalRoiPoint.annualizedIrrPct >= 0 ? '+' : ''}
+              {terminalRoiPoint.annualizedIrrPct.toFixed(1)}% IRR)
+            </span>
+            <span>
+              {compareGrowthScenarios ? (
+                <>
+                  Growth Spread (Aggr. vs Cons.):{' '}
+                  <strong className="text-[#1C6E46] dark:text-[#6FCB9F]">
+                    +{formatUsdFromK(terminalRoiPoint.growthSpreadK)}
+                  </strong>{' '}
+                  ({formatUsdFromK(terminalRoiPoint.conservativeGrowthStakeK)} →{' '}
+                  {formatUsdFromK(terminalRoiPoint.aggressiveGrowthStakeK)})
+                </>
+              ) : (
+                <>
+                  Enable <strong className="text-[#16213A] dark:text-[#E7EBF5]">Compare Growth Scenarios</strong> to overlay Conservative (1.00×) vs. Aggressive (1.045ⁿ) trajectories.
+                </>
+              )}
+            </span>
+          </div>
+        )}
       </section>
 
       {/* Main Chart + Live FX, Tax & Exit Sensitivity Panel */}
@@ -883,7 +1239,7 @@ export function FinancialsView() {
             <div className="inline-flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-[#1C6E46] dark:text-[#6FCB9F]" strokeWidth={1.5} />
               <h2 className="font-bold text-sm sm:text-base text-[#16213A] dark:text-[#E7EBF5]">
-                FY2027–FY2031 Revenue, EBITDA &amp; Net Profit ($K USD)
+                FY2027–{horizonRow.year} ({horizonYears}-Year Horizon) Revenue, EBITDA &amp; Net Profit ($K USD)
               </h2>
             </div>
             <span className="text-xs font-mono text-[#5F6576] dark:text-[#8E96B0] tabular-nums">
@@ -893,7 +1249,7 @@ export function FinancialsView() {
 
           <div className="h-[250px] sm:h-[320px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={modeledSeries} margin={{ top: 10, right: 14, left: 2, bottom: 8 }}>
+              <ComposedChart data={horizonSeries} margin={{ top: 10, right: 14, left: 2, bottom: 8 }}>
                 <CartesianGrid
                   strokeDasharray="3 3"
                   stroke={isDark ? '#232B4A' : '#E4DFD6'}
@@ -980,7 +1336,7 @@ export function FinancialsView() {
                 </tr>
               </thead>
               <tbody>
-                {modeledSeries.map((r) => (
+                {horizonSeries.map((r) => (
                   <tr
                     key={r.year}
                     className="border-b border-[#EFEBE3] dark:border-[#1E2642] last:border-0"
@@ -1384,12 +1740,12 @@ export function FinancialsView() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
             <div>
               <div className="text-xs font-mono text-[#1C6E46] dark:text-[#6FCB9F] font-semibold">
-                5-Year Scope Trajectory · FY2027–FY2031 ({scenario === 'conservative' ? 'Conservative Base' : 'Healthcare Upside'} · {activeGrowthSpec.shortLabel})
+                {horizonYears}-Year Scope Trajectory · FY2027–{horizonRow.year} ({scenario === 'conservative' ? 'Conservative Base' : 'Healthcare Upside'} · {activeGrowthSpec.shortLabel})
               </div>
               <h3 className="text-sm sm:text-base font-bold text-[#16213A] dark:text-[#E7EBF5] mt-0.5">
                 {scopeLineMetric === 'revenue'
-                  ? 'Projected Revenue by Scope ($K USD, FY2027–FY2031)'
-                  : 'Revenue Mix Transition (%) & Revenue-Weighted GM Bridge (FY2027–FY2031)'}
+                  ? `Projected Revenue by Scope ($K USD, FY2027–${horizonRow.year})`
+                  : `Revenue Mix Transition (%) & Revenue-Weighted GM Bridge (FY2027–${horizonRow.year})`}
               </h3>
             </div>
 
@@ -1471,7 +1827,7 @@ export function FinancialsView() {
           <div className="h-[260px] sm:h-[310px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
-                data={fiveYearScopeSeries}
+                data={horizonScopeSeries}
                 margin={{ top: 10, right: 16, left: 4, bottom: 8 }}
               >
                 <CartesianGrid
@@ -1575,26 +1931,27 @@ export function FinancialsView() {
             <span>
               FY2027 SaaS ARR:{' '}
               <strong className="text-[#16213A] dark:text-[#E7EBF5]">
-                {formatCompactUsdK(fiveYearScopeSeries[0]?.recurring_saas ?? 0)}
+                {formatCompactUsdK(horizonScopeSeries[0]?.recurring_saas ?? 0)}
               </strong>{' '}
-              → FY2031:{' '}
+              → {horizonRow.year}:{' '}
               <strong className="text-[#1C6E46] dark:text-[#6FCB9F]">
-                {formatCompactUsdK(fiveYearScopeSeries[4]?.recurring_saas ?? 0)}
+                {formatCompactUsdK(horizonScopeSeries[horizonScopeSeries.length - 1]?.recurring_saas ?? 0)}
               </strong>
             </span>
             <span>
               Rev-Wtd GM Bridge:{' '}
               <strong className="text-[#16213A] dark:text-[#E7EBF5]">
-                {(fiveYearScopeSeries[0]?.weightedGmPct ?? 0).toFixed(1)}%
+                {(horizonScopeSeries[0]?.weightedGmPct ?? 0).toFixed(1)}%
               </strong>{' '}
               →{' '}
               <strong className="text-[#1C6E46] dark:text-[#6FCB9F]">
-                {(fiveYearScopeSeries[4]?.weightedGmPct ?? 0).toFixed(1)}%
+                {(horizonScopeSeries[horizonScopeSeries.length - 1]?.weightedGmPct ?? 0).toFixed(1)}%
               </strong>{' '}
               {(() => {
-                const gmDelta =
-                  (fiveYearScopeSeries[4]?.weightedGmPct ?? 0) -
-                  (fiveYearScopeSeries[0]?.weightedGmPct ?? 0);
+                const startGm = horizonScopeSeries[0]?.weightedGmPct ?? 0;
+                const endGm =
+                  horizonScopeSeries[horizonScopeSeries.length - 1]?.weightedGmPct ?? 0;
+                const gmDelta = endGm - startGm;
                 return `(${gmDelta >= 0 ? '+' : ''}${gmDelta.toFixed(1)} pts)`;
               })()}
             </span>
