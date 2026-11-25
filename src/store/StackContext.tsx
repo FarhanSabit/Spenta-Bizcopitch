@@ -1262,13 +1262,26 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
       }
     })();
 
+    const hasStoredDeploy = (() => {
+      try {
+        return Boolean(window.localStorage.getItem(DEPLOYMENT_TARGET_STORAGE_KEY));
+      } catch {
+        return false;
+      }
+    })();
+    const hasStoredNeural = (() => {
+      try {
+        return Boolean(window.localStorage.getItem(NEURAL_CORE_STORAGE_KEY));
+      } catch {
+        return false;
+      }
+    })();
+
     void Promise.all([
       localPersistenceService.loadCalculatorState(),
       localPersistenceService.listCalculatorScenarios(),
       localPersistenceService.listWorkspaceSnapshots(),
-      hasStoredTab && hasStoredStack
-        ? Promise.resolve(null)
-        : localPersistenceService.loadUserSession(),
+      localPersistenceService.loadUserSession(),
       localPersistenceService.loadDiligencePrefs(),
       localPersistenceService.listInvestorFeedback(),
       localPersistenceService.listContactInquiries(),
@@ -1304,7 +1317,7 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
       if (Array.isArray(inquiryList)) {
         setContactInquiries(inquiryList);
       }
-      if (session) {
+      if (session && !initialShareSnapshot) {
         if (!hasStoredTab && NAV_TABS.includes(session.activeTab as NavTab)) {
           setActiveTab(session.activeTab as NavTab);
         }
@@ -1313,6 +1326,26 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
           if (validIds.length > 0) {
             setSelectedIds(validIds);
           }
+        }
+        if (!hasStoredDeploy && session.deploymentTarget in DEPLOYMENT_PROFILES) {
+          setDeploymentTargetState(session.deploymentTarget as DeploymentTargetId);
+        }
+        if (
+          typeof session.hitlConfidence === 'number' &&
+          Number.isFinite(session.hitlConfidence) &&
+          session.hitlConfidence >= 0.5 &&
+          session.hitlConfidence <= 0.99
+        ) {
+          setHitlConfidence(session.hitlConfidence);
+        }
+        if (
+          !hasStoredNeural &&
+          (session.neuralCoreSystem === 'solar-map' || session.neuralCoreSystem === 'spiral-galaxy')
+        ) {
+          setNeuralCoreState((prev) => ({
+            ...prev,
+            activeSystem: session.neuralCoreSystem as NeuralCoreSystem,
+          }));
         }
       }
       setInvestorCalculatorHydrated(true);
@@ -1353,6 +1386,7 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
         activeTab,
         selectedIds,
         deploymentTarget,
+        hitlConfidence,
         savedProposalsCount: savedProposals.length,
         neuralCoreSystem: neuralCoreState.activeSystem,
       });
@@ -1363,6 +1397,34 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     activeTab,
     selectedIds,
     deploymentTarget,
+    hitlConfidence,
+    savedProposals.length,
+    neuralCoreState.activeSystem,
+  ]);
+
+  // Flush latest calculator & user session state immediately when the browser tab hides or reloads
+  useEffect(() => {
+    if (!investorCalculatorHydrated) return;
+    const flushNow = () => {
+      void localPersistenceService.saveCalculatorState(investorCalculatorState);
+      void localPersistenceService.saveUserSession({
+        activeTab,
+        selectedIds,
+        deploymentTarget,
+        hitlConfidence,
+        savedProposalsCount: savedProposals.length,
+        neuralCoreSystem: neuralCoreState.activeSystem,
+      });
+    };
+    window.addEventListener('pagehide', flushNow);
+    return () => window.removeEventListener('pagehide', flushNow);
+  }, [
+    investorCalculatorHydrated,
+    investorCalculatorState,
+    activeTab,
+    selectedIds,
+    deploymentTarget,
+    hitlConfidence,
     savedProposals.length,
     neuralCoreState.activeSystem,
   ]);

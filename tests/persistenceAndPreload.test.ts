@@ -118,6 +118,7 @@ describe('LocalPersistenceService (offline-first storage v3)', () => {
       activeTab: 'Investor Briefing',
       selectedIds: ['icr_ops', 'genai_bi'],
       deploymentTarget: 'on-prem',
+      hitlConfidence: 0.94,
       savedProposalsCount: 2,
       neuralCoreSystem: 'solar-map',
     });
@@ -189,6 +190,7 @@ describe('LocalPersistenceService (offline-first storage v3)', () => {
 
     const session = await svc.loadUserSession();
     assert.equal(session?.activeTab, 'Investor Briefing');
+    assert.equal(session?.hitlConfidence, 0.94);
     assert.deepEqual(session?.selectedIds, ['icr_ops', 'genai_bi']);
 
     const bundle = await svc.exportAllOfflineData();

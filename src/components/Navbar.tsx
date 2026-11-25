@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Grid3x3, Layers, Menu, Moon, Search, Sparkles, Sun, X } from 'lucide-react';
 import { NAV_TABS, NavTab } from '../data/spentaManifest';
 import { useTheme } from '../context/ThemeContext';
@@ -6,7 +6,7 @@ import { useStack } from '../store/StackContext';
 import { SpentaLogo } from './SpentaLogo';
 import {
   getPanelPreloadHandlers,
-  getTabPreloadHandlers,
+  preloadTabView,
 } from '../utils/viewPreloaders';
 
 export function Navbar() {
@@ -24,6 +24,15 @@ export function Navbar() {
   } = useStack();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const handlePreloadTab = useCallback(
+    (tab: NavTab) => {
+      if (tab !== activeTab) {
+        preloadTabView(tab);
+      }
+    },
+    [activeTab],
+  );
+
   const handleSelectTab = (tab: NavTab) => {
     setActiveTab(tab);
     setMobileMenuOpen(false);
@@ -36,7 +45,9 @@ export function Navbar() {
         {/* Zone 1: Brand Wordmark + Subtle Hairline Divider */}
         <button
           type="button"
-          {...getTabPreloadHandlers('App Vault')}
+          onMouseEnter={() => handlePreloadTab('App Vault')}
+          onFocus={() => handlePreloadTab('App Vault')}
+          onTouchStart={() => handlePreloadTab('App Vault')}
           onClick={() => handleSelectTab('App Vault')}
           className="flex items-center gap-2.5 shrink-0 cursor-pointer focus:outline-none"
           aria-label="Spenta Sovereign OS Home"
@@ -59,7 +70,9 @@ export function Navbar() {
               <button
                 key={tab}
                 type="button"
-                {...(active ? {} : getTabPreloadHandlers(tab))}
+                onMouseEnter={() => handlePreloadTab(tab)}
+                onFocus={() => handlePreloadTab(tab)}
+                onTouchStart={() => handlePreloadTab(tab)}
                 onClick={() => handleSelectTab(tab)}
                 className={`relative whitespace-nowrap shrink-0 px-1.5 xl:px-2 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
                   active
@@ -161,7 +174,9 @@ export function Navbar() {
                 <button
                   key={tab}
                   type="button"
-                  {...(active ? {} : getTabPreloadHandlers(tab))}
+                  onMouseEnter={() => handlePreloadTab(tab)}
+                  onFocus={() => handlePreloadTab(tab)}
+                  onTouchStart={() => handlePreloadTab(tab)}
                   onClick={() => handleSelectTab(tab)}
                   className={`min-h-[44px] px-3 py-2.5 rounded-lg text-xs font-medium text-left transition-colors cursor-pointer ${
                     active

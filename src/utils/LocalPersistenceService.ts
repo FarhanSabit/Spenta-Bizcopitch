@@ -63,6 +63,7 @@ export interface PersistedUserSessionData {
   activeTab: string;
   selectedIds: string[];
   deploymentTarget: string;
+  hitlConfidence?: number;
   savedProposalsCount: number;
   neuralCoreSystem?: string;
   updatedAt: string;
