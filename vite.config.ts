@@ -37,23 +37,70 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
-          if (id.includes('/three/')) return 'vendor-three';
-          if (id.includes('/recharts/') || id.includes('/d3-')) return 'vendor-charts';
-          if (id.includes('/jspdf/')) {
-            return 'vendor-pdf';
+
+          // 3D Engine & Controls (Loaded on demand with 3D canvas tabs)
+          if (id.includes('/three/addons/') || id.includes('/three/examples/')) {
+            return 'vendor-three-addons';
+          }
+          if (id.includes('/three/')) {
+            return 'vendor-three-core';
+          }
+
+          // Charts & Data Visualization (Split into recharts, d3/victory, and state management)
+          if (id.includes('/recharts/')) {
+            return 'vendor-recharts';
+          }
+          if (id.includes('/d3-') || id.includes('/victory-vendor/')) {
+            return 'vendor-charts-d3';
           }
           if (
-            id.includes('/html2canvas/') ||
-            id.includes('/dompurify/') ||
-            id.includes('/canvg/')
+            id.includes('/@reduxjs/toolkit/') ||
+            id.includes('/react-redux/') ||
+            id.includes('/immer/') ||
+            id.includes('/reselect/')
           ) {
-            return 'vendor-pdf-extras';
+            return 'vendor-charts-state';
           }
-          if (id.includes('/framer-motion/') || id.includes('/gsap/')) return 'vendor-motion';
-          if (id.includes('/lucide-react/')) return 'vendor-icons';
-          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) {
+
+          // PDF Generation & Document Export (Granular split for print & export modules)
+          if (id.includes('/jspdf/')) {
+            return 'vendor-pdf-jspdf';
+          }
+          if (id.includes('/fflate/') || id.includes('/fast-png/')) {
+            return 'vendor-pdf-compression';
+          }
+          if (id.includes('/html2canvas/')) {
+            return 'vendor-pdf-html2canvas';
+          }
+          if (id.includes('/canvg/')) {
+            return 'vendor-pdf-canvg';
+          }
+          if (id.includes('/dompurify/')) {
+            return 'vendor-pdf-dompurify';
+          }
+
+          // Animations & Motion
+          if (id.includes('/framer-motion/')) {
+            return 'vendor-framer-motion';
+          }
+          if (id.includes('/gsap/')) {
+            return 'vendor-gsap';
+          }
+
+          // Icons
+          if (id.includes('/lucide-react/')) {
+            return 'vendor-icons';
+          }
+
+          // React Core Framework
+          if (
+            id.includes('/react/') ||
+            id.includes('/react-dom/') ||
+            id.includes('/scheduler/')
+          ) {
             return 'vendor-react';
           }
+
           return undefined;
         },
       },

@@ -40,8 +40,14 @@ import {
 import { useStack } from '../store/StackContext';
 import { usePathwayBrainSync } from '../hooks/usePathwayBrainSync';
 import { copyTextWithFallback } from '../utils/shareUrlCodec';
-import { SovereignBrain3D } from './three/SovereignBrain3D';
-import { ShowreelAndBrandsStudio } from './ShowreelAndBrandsStudio';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+
+const SovereignBrain3D = lazyWithRetry(() =>
+  import('./three/SovereignBrain3D').then((m) => ({ default: m.SovereignBrain3D })),
+);
+const ShowreelAndBrandsStudio = lazyWithRetry(() =>
+  import('./ShowreelAndBrandsStudio').then((m) => ({ default: m.ShowreelAndBrandsStudio })),
+);
 
 type VaultViewMode = 'matrix' | 'grid' | 'brain3d' | 'showreel';
 
@@ -1007,18 +1013,40 @@ export function SpentaBrainVault() {
       {viewMode === 'brain3d' && (
         <section className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#F2EFE9] dark:bg-[#0B1020] p-3 sm:p-4">
           <div className="h-[480px] sm:h-[600px] w-full">
-            <SovereignBrain3D
-              selectedHubId={activeBrainSelection.hubId}
-              hubFocusNonce={activeBrainSelection.nonce}
-              onSelectHub={(hubId) => selectBrainNode(hubId, undefined, 'vault')}
-              polarity={theme}
-            />
+            <React.Suspense
+              fallback={
+                <div className="w-full h-full flex flex-col items-center justify-center gap-3 animate-pulse text-xs font-mono text-[#5F6576] dark:text-[#8E96B0]">
+                  <div className="w-10 h-10 rounded-xl border border-[#1F3863]/30 dark:border-[#8FA6E8]/30 flex items-center justify-center">
+                    <Cpu className="w-5 h-5 text-[#1F3863] dark:text-[#8FA6E8] animate-spin" />
+                  </div>
+                  <span>Initializing 3D Sovereign Neural Core…</span>
+                </div>
+              }
+            >
+              <SovereignBrain3D
+                selectedHubId={activeBrainSelection.hubId}
+                hubFocusNonce={activeBrainSelection.nonce}
+                onSelectHub={(hubId) => selectBrainNode(hubId, undefined, 'vault')}
+                polarity={theme}
+              />
+            </React.Suspense>
           </div>
         </section>
       )}
 
       {/* VIEW 4: INTERACTIVE CHAPTERED 1080p SHOWREEL & BRAND STUDIO */}
-      {viewMode === 'showreel' && <ShowreelAndBrandsStudio seekSignal={showreelSeek} />}
+      {viewMode === 'showreel' && (
+        <React.Suspense
+          fallback={
+            <div className="w-full min-h-[400px] rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#F2EFE9] dark:bg-[#0B1020] p-8 flex flex-col items-center justify-center gap-3 text-xs font-mono text-[#5F6576] dark:text-[#8E96B0]">
+              <Film className="w-6 h-6 text-[#1F3863] dark:text-[#8FA6E8] animate-pulse" />
+              <span>Loading Showreel &amp; Brands Studio…</span>
+            </div>
+          }
+        >
+          <ShowreelAndBrandsStudio seekSignal={showreelSeek} />
+        </React.Suspense>
+      )}
     </div>
   );
 }

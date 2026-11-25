@@ -1,38 +1,42 @@
-import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useState } from 'react';
 import { Link2, RefreshCw, RotateCcw, WifiOff, X } from 'lucide-react';
 import { SPENTA_CONTACT_EMAIL } from './data/spentaManifest';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { StackProvider, useStack } from './store/StackContext';
 import { Navbar } from './components/Navbar';
-import { StackComposerDrawer } from './components/StackComposerDrawer';
 import { SpentaLogo } from './components/SpentaLogo';
 import { GlobalSearchBar } from './components/GlobalSearchBar';
 import { SpentaThemeView } from './components/SpentaThemeView';
 import { MobileGridToggle } from './components/MobileGridToggle';
 import { ResilientErrorBoundary } from './components/ResilientErrorBoundary';
+import { lazyWithRetry } from './utils/lazyWithRetry';
 
-const SpentaBrainVault = lazy(() =>
+const StackComposerDrawer = lazyWithRetry(() =>
+  import('./components/StackComposerDrawer').then((m) => ({ default: m.StackComposerDrawer })),
+);
+
+const SpentaBrainVault = lazyWithRetry(() =>
   import('./components/SpentaBrainVault').then((m) => ({ default: m.SpentaBrainVault })),
 );
-const InfographicsView = lazy(() =>
+const InfographicsView = lazyWithRetry(() =>
   import('./components/InfographicsView').then((m) => ({ default: m.InfographicsView })),
 );
-const FinancialsView = lazy(() =>
+const FinancialsView = lazyWithRetry(() =>
   import('./components/FinancialsView').then((m) => ({ default: m.FinancialsView })),
 );
-const SpentaCoreView = lazy(() =>
+const SpentaCoreView = lazyWithRetry(() =>
   import('./components/SpentaCoreView').then((m) => ({ default: m.SpentaCoreView })),
 );
-const TheBrainView = lazy(() =>
+const TheBrainView = lazyWithRetry(() =>
   import('./components/TheBrainView').then((m) => ({ default: m.TheBrainView })),
 );
-const PitchDeckView = lazy(() =>
+const PitchDeckView = lazyWithRetry(() =>
   import('./components/PitchDeckView').then((m) => ({ default: m.PitchDeckView })),
 );
-const ResourcesView = lazy(() =>
+const ResourcesView = lazyWithRetry(() =>
   import('./components/ResourcesView').then((m) => ({ default: m.ResourcesView })),
 );
-const SpentaAiAssistant = lazy(() =>
+const SpentaAiAssistant = lazyWithRetry(() =>
   import('./components/SpentaAiAssistant').then((m) => ({ default: m.SpentaAiAssistant })),
 );
 
@@ -306,7 +310,9 @@ function PortalShell() {
       </footer>
 
       <GlobalSearchBar />
-      <StackComposerDrawer />
+      <Suspense fallback={null}>
+        <StackComposerDrawer />
+      </Suspense>
       <MobileGridToggle />
       <Suspense fallback={null}>
         <SpentaAiAssistant />

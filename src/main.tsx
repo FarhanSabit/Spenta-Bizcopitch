@@ -11,6 +11,9 @@ import '@fontsource/jetbrains-mono/600.css';
 import '@fontsource/jetbrains-mono/700.css';
 import App from './App';
 import './index.css';
+import { installVitePreloadErrorHandler } from './utils/lazyWithRetry';
+
+installVitePreloadErrorHandler();
 
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   window.addEventListener('unhandledrejection', (event) => {

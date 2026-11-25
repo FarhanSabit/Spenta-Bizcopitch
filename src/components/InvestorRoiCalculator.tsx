@@ -781,6 +781,7 @@ export function InvestorRoiCalculator({
                       fill={isDark ? '#8FA6E8' : '#1F3863'}
                       radius={[4, 4, 0, 0]}
                       barSize={22}
+                      isAnimationActive={false}
                     />
                     <Bar
                       yAxisId="usd"
@@ -789,6 +790,7 @@ export function InvestorRoiCalculator({
                       fill={isDark ? '#6FCB9F' : '#1C6E46'}
                       radius={[4, 4, 0, 0]}
                       barSize={22}
+                      isAnimationActive={false}
                     />
                     <Line
                       yAxisId="moic"
@@ -799,6 +801,7 @@ export function InvestorRoiCalculator({
                       strokeWidth={2}
                       strokeDasharray="4 3"
                       dot={{ r: 3, fill: isDark ? '#93C5FD' : '#2563EB' }}
+                      isAnimationActive={false}
                     />
                     <Line
                       yAxisId="moic"
@@ -808,6 +811,7 @@ export function InvestorRoiCalculator({
                       stroke={isDark ? '#F5C57B' : '#B45309'}
                       strokeWidth={2.5}
                       dot={{ r: 3.5, fill: isDark ? '#F5C57B' : '#B45309' }}
+                      isAnimationActive={false}
                     />
                   </>
                 ) : (
@@ -819,6 +823,7 @@ export function InvestorRoiCalculator({
                       fill={isDark ? '#8FA6E8' : '#1F3863'}
                       radius={[4, 4, 0, 0]}
                       barSize={24}
+                      isAnimationActive={false}
                     />
                     <Bar
                       yAxisId="usd"
@@ -827,6 +832,7 @@ export function InvestorRoiCalculator({
                       fill={isDark ? '#6FCB9F' : '#1C6E46'}
                       radius={[4, 4, 0, 0]}
                       barSize={24}
+                      isAnimationActive={false}
                     />
                     <Line
                       yAxisId="moic"
@@ -836,6 +842,7 @@ export function InvestorRoiCalculator({
                       stroke={isDark ? '#F5C57B' : '#B45309'}
                       strokeWidth={2.5}
                       dot={{ r: 3.5, fill: isDark ? '#F5C57B' : '#B45309' }}
+                      isAnimationActive={false}
                     />
                   </>
                 )}
@@ -921,12 +928,15 @@ export function InvestorRoiCalculator({
                   fill={isDark ? '#4B5A87' : '#B9B2A5'}
                   radius={[4, 4, 0, 0]}
                   barSize={20}
+                  isAnimationActive={false}
                 />
                 <Bar
                   dataKey="proceedsK"
                   name={`${terminalPoint?.year ?? 'Exit'} Proceeds ($K)`}
+                  fill={isDark ? '#6FCB9F' : '#1C6E46'}
                   radius={[4, 4, 0, 0]}
                   barSize={24}
+                  isAnimationActive={false}
                 >
                   {tierComparisonData.map((entry) => (
                     <Cell

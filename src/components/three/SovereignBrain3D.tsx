@@ -1,9 +1,10 @@
 import React, { Component, Suspense, useEffect, useState } from 'react';
 import { BRAIN_HUBS } from '../../data/spentaManifest';
 import { useStack } from '../../store/StackContext';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
-const LazySovereignBrain3DCanvas = React.lazy(() => import('./SovereignBrain3DCanvas'));
-const LazySolarSystemBrain3DCanvas = React.lazy(() => import('./SolarSystemBrain3DCanvas'));
+const LazySovereignBrain3DCanvas = lazyWithRetry(() => import('./SovereignBrain3DCanvas'));
+const LazySolarSystemBrain3DCanvas = lazyWithRetry(() => import('./SolarSystemBrain3DCanvas'));
 
 export type NeuralCoreArchitecture = 'spiral-galaxy' | 'solar-map';
 

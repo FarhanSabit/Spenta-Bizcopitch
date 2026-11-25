@@ -1114,6 +1114,7 @@ export function FinancialsView() {
                       strokeWidth={2.75}
                       dot={{ r: 4, fill: isDark ? '#8FA6E8' : '#1F3863' }}
                       activeDot={{ r: 6 }}
+                      isAnimationActive={false}
                     />
                     <Line
                       type="monotone"
@@ -1123,6 +1124,7 @@ export function FinancialsView() {
                       strokeWidth={3}
                       dot={{ r: 4, fill: isDark ? '#6FCB9F' : '#1C6E46' }}
                       activeDot={{ r: 6 }}
+                      isAnimationActive={false}
                     />
                     <Line
                       type="monotone"
@@ -1132,6 +1134,7 @@ export function FinancialsView() {
                       strokeWidth={2}
                       strokeDasharray="5 4"
                       dot={{ r: 3, fill: isDark ? '#F5C57B' : '#B45309' }}
+                      isAnimationActive={false}
                     />
                   </>
                 ) : (
@@ -1144,6 +1147,7 @@ export function FinancialsView() {
                       strokeWidth={3}
                       dot={{ r: 4, fill: isDark ? '#6FCB9F' : '#1C6E46' }}
                       activeDot={{ r: 6 }}
+                      isAnimationActive={false}
                     />
                     <Line
                       type="monotone"
@@ -1152,6 +1156,7 @@ export function FinancialsView() {
                       stroke={isDark ? '#8FA6E8' : '#1F3863'}
                       strokeWidth={2.25}
                       dot={{ r: 3.5, fill: isDark ? '#8FA6E8' : '#1F3863' }}
+                      isAnimationActive={false}
                     />
                     <Line
                       type="monotone"
@@ -1161,6 +1166,7 @@ export function FinancialsView() {
                       strokeWidth={2}
                       strokeDasharray="5 4"
                       dot={{ r: 3, fill: isDark ? '#F5C57B' : '#B45309' }}
+                      isAnimationActive={false}
                     />
                   </>
                 )
@@ -1174,6 +1180,7 @@ export function FinancialsView() {
                     strokeWidth={2.75}
                     dot={{ r: 4, fill: isDark ? '#8FA6E8' : '#1F3863' }}
                     activeDot={{ r: 6 }}
+                    isAnimationActive={false}
                   />
                   <Line
                     type="monotone"
@@ -1183,6 +1190,7 @@ export function FinancialsView() {
                     strokeWidth={3}
                     dot={{ r: 4, fill: isDark ? '#6FCB9F' : '#1C6E46' }}
                     activeDot={{ r: 6 }}
+                    isAnimationActive={false}
                   />
                 </>
               ) : (
@@ -1194,6 +1202,7 @@ export function FinancialsView() {
                   strokeWidth={3}
                   dot={{ r: 4, fill: isDark ? '#6FCB9F' : '#1C6E46' }}
                   activeDot={{ r: 6 }}
+                  isAnimationActive={false}
                 />
               )}
             </LineChart>

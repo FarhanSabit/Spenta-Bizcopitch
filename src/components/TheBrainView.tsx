@@ -6,6 +6,7 @@ import {
   Brain,
   Check,
   CheckCircle2,
+  Cpu,
   ExternalLink,
   Globe,
   Link2,
@@ -32,8 +33,12 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import { useStack } from '../store/StackContext';
 import { usePathwayBrainSync } from '../hooks/usePathwayBrainSync';
-import { SovereignBrain3D } from './three/SovereignBrain3D';
 import { copyTextWithFallback } from '../utils/shareUrlCodec';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+
+const SovereignBrain3D = lazyWithRetry(() =>
+  import('./three/SovereignBrain3D').then((m) => ({ default: m.SovereignBrain3D })),
+);
 import brainStoneSculptImg from '../assets/images/brain_stone_sculpt_1795257685678.jpg';
 import brainNocturnalCoreImg from '../assets/images/brain_nocturnal_core_1795257688515.jpg';
 import brainDualSynapseImg from '../assets/images/brain_dual_synapse_1795257687722.jpg';
@@ -838,12 +843,23 @@ export function TheBrainView() {
                 isDark ? 'border-[#232B4A] bg-[#0B1020]' : 'border-[#E4DFD6] bg-[#F2EFE9]'
               }`}
             >
-              <SovereignBrain3D
-                polarity={brainPolarity}
-                selectedHubId={selectedHubId}
-                hubFocusNonce={hubFocusNonce}
-                onSelectHub={handleSelect3DHub}
-              />
+              <React.Suspense
+                fallback={
+                  <div className="w-full h-full min-h-[480px] sm:min-h-[560px] lg:min-h-[600px] flex flex-col items-center justify-center gap-3 animate-pulse text-xs font-mono text-[#5F6576] dark:text-[#8E96B0]">
+                    <div className="w-10 h-10 rounded-xl border border-[#1F3863]/30 dark:border-[#8FA6E8]/30 flex items-center justify-center">
+                      <Cpu className="w-5 h-5 text-[#1F3863] dark:text-[#8FA6E8] animate-spin" />
+                    </div>
+                    <span>Initializing 3D Sovereign Neural Core…</span>
+                  </div>
+                }
+              >
+                <SovereignBrain3D
+                  polarity={brainPolarity}
+                  selectedHubId={selectedHubId}
+                  hubFocusNonce={hubFocusNonce}
+                  onSelectHub={handleSelect3DHub}
+                />
+              </React.Suspense>
             </div>
           )}
         </div>

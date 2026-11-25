@@ -16,9 +16,11 @@ const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
+const isDev = process.env.NODE_ENV === 'development';
 const isProd =
-  process.env.NODE_ENV === 'production' ||
-  Boolean(process.env.K_SERVICE || process.env.CLOUD_RUN_JOB);
+  !isDev &&
+  (process.env.NODE_ENV === 'production' ||
+    Boolean(process.env.K_SERVICE || process.env.CLOUD_RUN_JOB));
 
 async function startServer() {
   const app = express();
@@ -132,8 +134,24 @@ async function startServer() {
 
   const distDir = path.join(__dirname, 'dist');
   const serveStatic = () => {
-    app.use(express.static(distDir));
-    app.use((_req, res) => {
+    app.use(
+      '/assets',
+      express.static(path.join(distDir, 'assets'), {
+        immutable: true,
+        maxAge: '1y',
+        fallthrough: true,
+      }),
+    );
+    app.use('/assets', (_req, res) => {
+      res.status(404).setHeader('Cache-Control', 'no-store').type('text/plain').send('Asset not found');
+    });
+    app.use(express.static(distDir, { index: false }));
+    app.use((req, res) => {
+      if (/\.(?:js|mjs|cjs|css|map|wasm|json|svg|png|jpe?g|webp|woff2?)$/i.test(req.path)) {
+        res.status(404).setHeader('Cache-Control', 'no-store').type('text/plain').send('Not found');
+        return;
+      }
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.sendFile(path.join(distDir, 'index.html'));
     });
   };
