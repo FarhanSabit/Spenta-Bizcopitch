@@ -91,7 +91,7 @@ describe('LocalPersistenceService (offline-first storage v3)', () => {
 
     await svc.saveCalculatorState(calcState);
 
-    const savedScenario = await svc.saveCalculatorScenario({
+    const savedScenario = await svc.saveScenario({
       name: 'Board Upside $250K',
       description: '4-year aggressive projection at 12x exit',
       state: calcState,
@@ -99,7 +99,7 @@ describe('LocalPersistenceService (offline-first storage v3)', () => {
     assert.ok(savedScenario.id);
     assert.equal(savedScenario.name, 'Board Upside $250K');
 
-    const loadedScenario = await svc.getCalculatorScenario(savedScenario.id);
+    const loadedScenario = await svc.getScenario(savedScenario.id);
     assert.equal(loadedScenario?.state.investmentK, 250);
 
     const scenarioList = await svc.listCalculatorScenarios();

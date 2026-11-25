@@ -1,3 +1,5 @@
+import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+
 export type PersistenceStoreName =
   | 'investorCalculator'
   | 'calculatorScenarios'
@@ -24,6 +26,7 @@ export const PERSISTENCE_STORES: readonly PersistenceStoreName[] = [
 export const DEFAULT_CALCULATOR_KEY = 'active_investor_calculator';
 export const DEFAULT_SESSION_KEY = 'active_user_session';
 export const DEFAULT_DILIGENCE_PREFS_KEY = 'active_diligence_prefs';
+export const DEFAULT_WORKSPACE_SNAPSHOT_KEY = 'latest_workspace_snapshot';
 
 export interface PersistedInvestorCalculatorState {
   scenario: 'conservative' | 'upside';
@@ -133,6 +136,17 @@ interface StoredRow<T = unknown> {
   updatedAt: string;
 }
 
+interface SpentaOfflineDBSchema extends DBSchema {
+  investorCalculator: { key: string; value: StoredRow };
+  calculatorScenarios: { key: string; value: StoredRow };
+  chartProjections: { key: string; value: StoredRow };
+  userSession: { key: string; value: StoredRow };
+  workspaceSnapshots: { key: string; value: StoredRow };
+  investorFeedback: { key: string; value: StoredRow };
+  diligencePrefs: { key: string; value: StoredRow };
+  contactInquiries: { key: string; value: StoredRow };
+}
+
 const FALLBACK_STORAGE_PREFIX = 'spenta_idb_fallback_v2:';
 
 function hasIndexedDb(): boolean {
@@ -155,16 +169,16 @@ function createRecordId(prefix: string): string {
 }
 
 /**
- * Offline-first IndexedDB persistence service for Spenta Sovereign OS.
- * Stores active investor calculator state, named investor calculator scenarios,
- * computed chart projection series, user session state, and named user workspace
- * snapshots with zero server reliance. Automatically falls back to localStorage
- * and in-memory storage when IndexedDB is unavailable.
+ * Offline-first IndexedDB persistence service backed by the `idb` library.
+ * Provides typed CRUD helpers (`saveScenario`, `getScenario`,
+ * `saveWorkspaceSnapshot`, `getWorkspaceSnapshot`, plus active calculator,
+ * chart projections, user session, feedback, preferences, and inquiries)
+ * with zero server reliance and automatic localStorage/memory fallback.
  */
 export class LocalPersistenceService {
   private readonly dbName: string;
   private readonly dbVersion: number;
-  private dbPromise: Promise<IDBDatabase | null> | null = null;
+  private dbPromise: Promise<IDBPDatabase<SpentaOfflineDBSchema> | null> | null = null;
   private readonly memoryFallback: Record<PersistenceStoreName, Map<string, StoredRow>> = {
     investorCalculator: new Map(),
     calculatorScenarios: new Map(),
@@ -181,7 +195,7 @@ export class LocalPersistenceService {
     this.dbVersion = dbVersion;
   }
 
-  private openDatabase(): Promise<IDBDatabase | null> {
+  private openDatabase(): Promise<IDBPDatabase<SpentaOfflineDBSchema> | null> {
     if (!hasIndexedDb()) {
       return Promise.resolve(null);
     }
@@ -189,40 +203,23 @@ export class LocalPersistenceService {
       return this.dbPromise;
     }
 
-    this.dbPromise = new Promise<IDBDatabase | null>((resolve) => {
-      try {
-        const request = indexedDB.open(this.dbName, this.dbVersion);
-
-        request.onupgradeneeded = () => {
-          const db = request.result;
-          for (const storeName of PERSISTENCE_STORES) {
-            if (!db.objectStoreNames.contains(storeName)) {
-              db.createObjectStore(storeName, { keyPath: 'id' });
-            }
+    this.dbPromise = openDB<SpentaOfflineDBSchema>(this.dbName, this.dbVersion, {
+      upgrade: (db) => {
+        for (const storeName of PERSISTENCE_STORES) {
+          if (!db.objectStoreNames.contains(storeName)) {
+            db.createObjectStore(storeName, { keyPath: 'id' });
           }
-        };
-
-        request.onsuccess = () => {
-          const db = request.result;
-          db.onversionchange = () => {
-            db.close();
-            this.dbPromise = null;
-          };
-          resolve(db);
-        };
-
-        request.onerror = () => {
-          this.dbPromise = null;
-          resolve(null);
-        };
-
-        request.onblocked = () => {
-          resolve(null);
-        };
-      } catch {
+        }
+      },
+      blocking: () => {
         this.dbPromise = null;
-        resolve(null);
-      }
+      },
+      terminated: () => {
+        this.dbPromise = null;
+      },
+    }).catch(() => {
+      this.dbPromise = null;
+      return null;
     });
 
     return this.dbPromise;
@@ -315,24 +312,11 @@ export class LocalPersistenceService {
       return;
     }
 
-    await new Promise<void>((resolve) => {
-      try {
-        const tx = db.transaction(store, 'readwrite');
-        tx.objectStore(store).put(row);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => {
-          this.writeFallback(store, key, row);
-          resolve();
-        };
-        tx.onabort = () => {
-          this.writeFallback(store, key, row);
-          resolve();
-        };
-      } catch {
-        this.writeFallback(store, key, row);
-        resolve();
-      }
-    });
+    try {
+      await db.put(store, row);
+    } catch {
+      this.writeFallback(store, key, row);
+    }
   }
 
   async getRecord<T>(store: PersistenceStoreName, key: string): Promise<T | null> {
@@ -342,28 +326,17 @@ export class LocalPersistenceService {
       return row ? row.value : null;
     }
 
-    return new Promise<T | null>((resolve) => {
-      try {
-        const tx = db.transaction(store, 'readonly');
-        const req = tx.objectStore(store).get(key);
-        req.onsuccess = () => {
-          const row = req.result as StoredRow<T> | undefined;
-          if (row && 'value' in row) {
-            resolve(row.value);
-            return;
-          }
-          const fallback = this.readFallback<T>(store, key);
-          resolve(fallback ? fallback.value : null);
-        };
-        req.onerror = () => {
-          const fallback = this.readFallback<T>(store, key);
-          resolve(fallback ? fallback.value : null);
-        };
-      } catch {
-        const fallback = this.readFallback<T>(store, key);
-        resolve(fallback ? fallback.value : null);
+    try {
+      const row = (await db.get(store, key)) as StoredRow<T> | undefined;
+      if (row && 'value' in row) {
+        return row.value;
       }
-    });
+    } catch {
+      // fall back to localStorage / memory cache
+    }
+
+    const fallback = this.readFallback<T>(store, key);
+    return fallback ? fallback.value : null;
   }
 
   async getAllRecords<T = unknown>(store: PersistenceStoreName): Promise<Record<string, T>> {
@@ -377,37 +350,23 @@ export class LocalPersistenceService {
       return out;
     }
 
-    return new Promise<Record<string, T>>((resolve) => {
-      try {
-        const tx = db.transaction(store, 'readonly');
-        const req = tx.objectStore(store).getAll();
-        req.onsuccess = () => {
-          const rows = (req.result as StoredRow<T>[]) || [];
-          const out: Record<string, T> = {};
-          for (const row of rows) {
-            if (row && typeof row.id === 'string') {
-              out[row.id] = row.value;
-            }
-          }
-          resolve(out);
-        };
-        req.onerror = () => {
-          const rows = this.listFallback(store);
-          const out: Record<string, T> = {};
-          for (const row of rows) {
-            out[row.id] = row.value as T;
-          }
-          resolve(out);
-        };
-      } catch {
-        const rows = this.listFallback(store);
-        const out: Record<string, T> = {};
-        for (const row of rows) {
-          out[row.id] = row.value as T;
+    try {
+      const rows = (await db.getAll(store)) as StoredRow<T>[];
+      const out: Record<string, T> = {};
+      for (const row of rows) {
+        if (row && typeof row.id === 'string') {
+          out[row.id] = row.value;
         }
-        resolve(out);
       }
-    });
+      return out;
+    } catch {
+      const rows = this.listFallback(store);
+      const out: Record<string, T> = {};
+      for (const row of rows) {
+        out[row.id] = row.value as T;
+      }
+      return out;
+    }
   }
 
   async deleteRecord(store: PersistenceStoreName, key: string): Promise<void> {
@@ -415,16 +374,11 @@ export class LocalPersistenceService {
     const db = await this.openDatabase();
     if (!db) return;
 
-    await new Promise<void>((resolve) => {
-      try {
-        const tx = db.transaction(store, 'readwrite');
-        tx.objectStore(store).delete(key);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    try {
+      await db.delete(store, key);
+    } catch {
+      // ignore IndexedDB delete error; fallback already cleared
+    }
   }
 
   // Active Investor Calculator State
@@ -446,7 +400,7 @@ export class LocalPersistenceService {
   }
 
   // Named Investor Calculator Scenarios
-  async saveCalculatorScenario(
+  async saveScenario(
     input: Omit<InvestorCalculatorScenario, 'id' | 'createdAt' | 'updatedAt'> & {
       id?: string;
       createdAt?: string;
@@ -465,8 +419,21 @@ export class LocalPersistenceService {
     return record;
   }
 
-  async getCalculatorScenario(id: string): Promise<InvestorCalculatorScenario | null> {
+  async getScenario(id: string): Promise<InvestorCalculatorScenario | null> {
     return this.getRecord<InvestorCalculatorScenario>('calculatorScenarios', id);
+  }
+
+  async saveCalculatorScenario(
+    input: Omit<InvestorCalculatorScenario, 'id' | 'createdAt' | 'updatedAt'> & {
+      id?: string;
+      createdAt?: string;
+    },
+  ): Promise<InvestorCalculatorScenario> {
+    return this.saveScenario(input);
+  }
+
+  async getCalculatorScenario(id: string): Promise<InvestorCalculatorScenario | null> {
+    return this.getScenario(id);
   }
 
   async listCalculatorScenarios(): Promise<InvestorCalculatorScenario[]> {
@@ -519,7 +486,7 @@ export class LocalPersistenceService {
     return this.getRecord<PersistedUserSessionData>('userSession', DEFAULT_SESSION_KEY);
   }
 
-  // Named User Workspace Snapshots
+  // User Workspace Snapshots (auto-saved latest state + named checkpoints)
   async saveWorkspaceSnapshot(
     input: Omit<UserWorkspaceSnapshot, 'id' | 'createdAt' | 'updatedAt'> & {
       id?: string;
@@ -545,13 +512,17 @@ export class LocalPersistenceService {
     return record;
   }
 
-  async getWorkspaceSnapshot(id: string): Promise<UserWorkspaceSnapshot | null> {
+  async getWorkspaceSnapshot(
+    id: string = DEFAULT_WORKSPACE_SNAPSHOT_KEY,
+  ): Promise<UserWorkspaceSnapshot | null> {
     return this.getRecord<UserWorkspaceSnapshot>('workspaceSnapshots', id);
   }
 
   async listWorkspaceSnapshots(): Promise<UserWorkspaceSnapshot[]> {
     const all = await this.getAllRecords<UserWorkspaceSnapshot>('workspaceSnapshots');
-    return Object.values(all).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return Object.values(all)
+      .filter((item) => item.id !== DEFAULT_WORKSPACE_SNAPSHOT_KEY)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   async deleteWorkspaceSnapshot(id: string): Promise<void> {
@@ -729,19 +700,13 @@ export class LocalPersistenceService {
     if (!db) return;
 
     await Promise.all(
-      PERSISTENCE_STORES.map(
-        (storeName) =>
-          new Promise<void>((resolve) => {
-            try {
-              const tx = db.transaction(storeName, 'readwrite');
-              tx.objectStore(storeName).clear();
-              tx.oncomplete = () => resolve();
-              tx.onerror = () => resolve();
-            } catch {
-              resolve();
-            }
-          }),
-      ),
+      PERSISTENCE_STORES.map(async (storeName) => {
+        try {
+          await db.clear(storeName);
+        } catch {
+          // ignore
+        }
+      }),
     );
   }
 

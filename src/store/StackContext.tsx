@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BRAIN_HUBS,
   NAV_TABS,
@@ -30,10 +30,11 @@ import {
   resolveBrainHubForPathwayNode,
 } from '../utils/pathwayBrainLink';
 import {
+  DEFAULT_WORKSPACE_SNAPSHOT_KEY,
   InvestorCalculatorScenario,
   InvestorFeedbackPriority,
   InvestorFeedbackRecord,
-  localPersistenceService,
+  LocalPersistenceService,
   OfflineContactInquiry,
   PersistedInvestorCalculatorState,
   UserWorkspaceSnapshot,
@@ -894,6 +895,30 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
   const [neuralCoreState, setNeuralCoreState] = useState<NeuralCoreState>(() =>
     loadStoredNeuralCoreState(),
   );
+  const persistenceService = useMemo(() => new LocalPersistenceService(), []);
+  const initialLocalStorageFlagsRef = useRef<{
+    hasTab: boolean;
+    hasStack: boolean;
+    hasDeploy: boolean;
+    hasNeural: boolean;
+  } | null>(null);
+  if (initialLocalStorageFlagsRef.current === null) {
+    try {
+      initialLocalStorageFlagsRef.current = {
+        hasTab: Boolean(window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY)),
+        hasStack: Boolean(window.localStorage.getItem(STACK_STORAGE_KEY)),
+        hasDeploy: Boolean(window.localStorage.getItem(DEPLOYMENT_TARGET_STORAGE_KEY)),
+        hasNeural: Boolean(window.localStorage.getItem(NEURAL_CORE_STORAGE_KEY)),
+      };
+    } catch {
+      initialLocalStorageFlagsRef.current = {
+        hasTab: false,
+        hasStack: false,
+        hasDeploy: false,
+        hasNeural: false,
+      };
+    }
+  }
 
   const deploymentProfile = DEPLOYMENT_PROFILES[deploymentTarget];
 
@@ -957,13 +982,22 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const [investorCalculatorState, setInvestorCalculatorState] = useState<InvestorCalculatorState>(
+    () => ({
+      ...DEFAULT_INVESTOR_CALCULATOR_STATE,
+      mixScopeWeights: { ...DEFAULT_INVESTOR_CALCULATOR_STATE.mixScopeWeights },
+    }),
+  );
+  const [investorCalculatorHydrated, setInvestorCalculatorHydrated] = useState<boolean>(false);
+
   useEffect(() => {
+    if (!investorCalculatorHydrated) return;
     try {
       window.localStorage.setItem(STACK_STORAGE_KEY, JSON.stringify(selectedIds));
     } catch {
       // ignore storage quota errors
     }
-  }, [selectedIds]);
+  }, [investorCalculatorHydrated, selectedIds]);
 
   useEffect(() => {
     try {
@@ -990,12 +1024,13 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
   }, [coreAuditLog]);
 
   useEffect(() => {
+    if (!investorCalculatorHydrated) return;
     try {
       window.localStorage.setItem(DEPLOYMENT_TARGET_STORAGE_KEY, deploymentTarget);
     } catch {
       // ignore storage quota errors
     }
-  }, [deploymentTarget]);
+  }, [investorCalculatorHydrated, deploymentTarget]);
 
   useEffect(() => {
     if (!autoNotice) return;
@@ -1004,28 +1039,22 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
   }, [autoNotice]);
 
   useEffect(() => {
+    if (!investorCalculatorHydrated) return;
     try {
       window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTab);
     } catch {
       // ignore storage quota errors
     }
-  }, [activeTab]);
+  }, [investorCalculatorHydrated, activeTab]);
 
   useEffect(() => {
+    if (!investorCalculatorHydrated) return;
     try {
       window.localStorage.setItem(NEURAL_CORE_STORAGE_KEY, JSON.stringify(neuralCoreState));
     } catch {
       // ignore storage quota errors
     }
-  }, [neuralCoreState]);
-
-  const [investorCalculatorState, setInvestorCalculatorState] = useState<InvestorCalculatorState>(
-    () => ({
-      ...DEFAULT_INVESTOR_CALCULATOR_STATE,
-      mixScopeWeights: { ...DEFAULT_INVESTOR_CALCULATOR_STATE.mixScopeWeights },
-    }),
-  );
-  const [investorCalculatorHydrated, setInvestorCalculatorHydrated] = useState<boolean>(false);
+  }, [investorCalculatorHydrated, neuralCoreState]);
   const [savedCalculatorScenarios, setSavedCalculatorScenarios] = useState<
     InvestorCalculatorScenario[]
   >([]);
@@ -1078,38 +1107,47 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
 
   const addInvestorFeedback = useCallback<StackContextValue['addInvestorFeedback']>(
     async (input) => {
-      const saved = await localPersistenceService.saveInvestorFeedback(input);
+      const saved = await persistenceService.saveInvestorFeedback(input);
       setInvestorFeedback((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]);
       return saved;
     },
-    [],
+    [persistenceService],
   );
 
-  const replyInvestorFeedback = useCallback(async (feedbackId: string, replyText: string) => {
-    const updated = await localPersistenceService.addFeedbackReply(feedbackId, replyText);
-    if (!updated) return;
-    setInvestorFeedback((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-  }, []);
+  const replyInvestorFeedback = useCallback(
+    async (feedbackId: string, replyText: string) => {
+      const updated = await persistenceService.addFeedbackReply(feedbackId, replyText);
+      if (!updated) return;
+      setInvestorFeedback((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+    },
+    [persistenceService],
+  );
 
-  const deleteInvestorFeedback = useCallback(async (id: string) => {
-    await localPersistenceService.deleteInvestorFeedback(id);
-    setInvestorFeedback((prev) => prev.filter((item) => item.id !== id));
-  }, []);
+  const deleteInvestorFeedback = useCallback(
+    async (id: string) => {
+      await persistenceService.deleteInvestorFeedback(id);
+      setInvestorFeedback((prev) => prev.filter((item) => item.id !== id));
+    },
+    [persistenceService],
+  );
 
   const submitContactInquiry = useCallback<StackContextValue['submitContactInquiry']>(
     async (input) => {
-      const saved = await localPersistenceService.saveContactInquiry(input);
+      const saved = await persistenceService.saveContactInquiry(input);
       setContactInquiries((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]);
       setAutoNotice(`Saved founder inquiry draft for "${saved.topic}" offline to IndexedDB`);
       return saved;
     },
-    [],
+    [persistenceService],
   );
 
-  const deleteContactInquiry = useCallback(async (id: string) => {
-    await localPersistenceService.deleteContactInquiry(id);
-    setContactInquiries((prev) => prev.filter((item) => item.id !== id));
-  }, []);
+  const deleteContactInquiry = useCallback(
+    async (id: string) => {
+      await persistenceService.deleteContactInquiry(id);
+      setContactInquiries((prev) => prev.filter((item) => item.id !== id));
+    },
+    [persistenceService],
+  );
 
   const loadCaseStudyStack = useCallback(
     (appIds: string[], label: string) => {
@@ -1168,7 +1206,7 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
 
   const saveCalculatorScenario = useCallback<StackContextValue['saveCalculatorScenario']>(
     async (name, description) => {
-      const saved = await localPersistenceService.saveCalculatorScenario({
+      const saved = await persistenceService.saveScenario({
         name,
         description,
         state: investorCalculatorState,
@@ -1179,7 +1217,7 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
       ]);
       return saved;
     },
-    [investorCalculatorState],
+    [investorCalculatorState, persistenceService],
   );
 
   const applyCalculatorScenario = useCallback(
@@ -1192,14 +1230,17 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     [savedCalculatorScenarios],
   );
 
-  const deleteCalculatorScenario = useCallback(async (id: string) => {
-    await localPersistenceService.deleteCalculatorScenario(id);
-    setSavedCalculatorScenarios((prev) => prev.filter((item) => item.id !== id));
-  }, []);
+  const deleteCalculatorScenario = useCallback(
+    async (id: string) => {
+      await persistenceService.deleteCalculatorScenario(id);
+      setSavedCalculatorScenarios((prev) => prev.filter((item) => item.id !== id));
+    },
+    [persistenceService],
+  );
 
   const saveWorkspaceSnapshot = useCallback<StackContextValue['saveWorkspaceSnapshot']>(
     async (name) => {
-      const saved = await localPersistenceService.saveWorkspaceSnapshot({
+      const saved = await persistenceService.saveWorkspaceSnapshot({
         name,
         activeTab,
         selectedIds,
@@ -1211,7 +1252,14 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
       setAutoNotice(`Saved offline workspace snapshot "${saved.name}" to IndexedDB`);
       return saved;
     },
-    [activeTab, selectedIds, deploymentTarget, hitlConfidence, investorCalculatorState],
+    [
+      activeTab,
+      selectedIds,
+      deploymentTarget,
+      hitlConfidence,
+      investorCalculatorState,
+      persistenceService,
+    ],
   );
 
   const restoreWorkspaceSnapshot = useCallback(
@@ -1239,150 +1287,171 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     [workspaceSnapshots],
   );
 
-  const deleteWorkspaceSnapshot = useCallback(async (id: string) => {
-    await localPersistenceService.deleteWorkspaceSnapshot(id);
-    setWorkspaceSnapshots((prev) => prev.filter((item) => item.id !== id));
-  }, []);
+  const deleteWorkspaceSnapshot = useCallback(
+    async (id: string) => {
+      await persistenceService.deleteWorkspaceSnapshot(id);
+      setWorkspaceSnapshots((prev) => prev.filter((item) => item.id !== id));
+    },
+    [persistenceService],
+  );
 
-  // Hydrate investor calculator state, saved scenarios, workspace snapshots, diligence preferences, feedback, inquiries, and session fallback from IndexedDB
+  // Hydrate investor calculator state, saved scenarios, latest workspace snapshot, diligence preferences, feedback, inquiries, and session from IndexedDB on mount
   useEffect(() => {
     let active = true;
-    const hasStoredTab = (() => {
-      try {
-        return Boolean(window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY));
-      } catch {
-        return false;
-      }
-    })();
-    const hasStoredStack = (() => {
-      try {
-        return Boolean(window.localStorage.getItem(STACK_STORAGE_KEY));
-      } catch {
-        return false;
-      }
-    })();
-
-    const hasStoredDeploy = (() => {
-      try {
-        return Boolean(window.localStorage.getItem(DEPLOYMENT_TARGET_STORAGE_KEY));
-      } catch {
-        return false;
-      }
-    })();
-    const hasStoredNeural = (() => {
-      try {
-        return Boolean(window.localStorage.getItem(NEURAL_CORE_STORAGE_KEY));
-      } catch {
-        return false;
-      }
-    })();
+    const initialFlags = initialLocalStorageFlagsRef.current ?? {
+      hasTab: false,
+      hasStack: false,
+      hasDeploy: false,
+      hasNeural: false,
+    };
+    const hasStoredTab = initialFlags.hasTab;
+    const hasStoredStack = initialFlags.hasStack;
+    const hasStoredDeploy = initialFlags.hasDeploy;
+    const hasStoredNeural = initialFlags.hasNeural;
 
     void Promise.all([
-      localPersistenceService.loadCalculatorState(),
-      localPersistenceService.listCalculatorScenarios(),
-      localPersistenceService.listWorkspaceSnapshots(),
-      localPersistenceService.loadUserSession(),
-      localPersistenceService.loadDiligencePrefs(),
-      localPersistenceService.listInvestorFeedback(),
-      localPersistenceService.listContactInquiries(),
-    ]).then(([savedCalc, scenarios, snapshots, session, diligencePrefs, feedbackList, inquiryList]) => {
-      if (!active) return;
-      if (savedCalc) {
-        setInvestorCalculatorState(sanitizeInvestorCalculatorState(savedCalc));
-      }
-      if (Array.isArray(scenarios)) {
-        setSavedCalculatorScenarios(scenarios);
-      }
-      if (Array.isArray(snapshots)) {
-        setWorkspaceSnapshots(snapshots);
-      }
-      if (diligencePrefs) {
-        if (diligencePrefs.currency === 'USD' || diligencePrefs.currency === 'BDT') {
-          setCurrency(diligencePrefs.currency);
+      persistenceService.loadCalculatorState(),
+      persistenceService.listCalculatorScenarios(),
+      persistenceService.listWorkspaceSnapshots(),
+      persistenceService.getWorkspaceSnapshot(DEFAULT_WORKSPACE_SNAPSHOT_KEY),
+      persistenceService.loadUserSession(),
+      persistenceService.loadDiligencePrefs(),
+      persistenceService.listInvestorFeedback(),
+      persistenceService.listContactInquiries(),
+    ]).then(
+      ([
+        savedCalc,
+        scenarios,
+        snapshots,
+        latestSnapshot,
+        session,
+        diligencePrefs,
+        feedbackList,
+        inquiryList,
+      ]) => {
+        if (!active) return;
+        const restoredCalc = savedCalc ?? latestSnapshot?.calculatorState ?? null;
+        if (restoredCalc) {
+          setInvestorCalculatorState(sanitizeInvestorCalculatorState(restoredCalc));
         }
-        if (
-          diligencePrefs.personaTrack === 'financial' ||
-          diligencePrefs.personaTrack === 'technical' ||
-          diligencePrefs.personaTrack === 'strategic'
-        ) {
-          setPersonaTrack(diligencePrefs.personaTrack);
+        if (Array.isArray(scenarios)) {
+          setSavedCalculatorScenarios(scenarios);
         }
-        if (Array.isArray(diligencePrefs.bookmarkedDocIds)) {
-          setBookmarkedDocIds(diligencePrefs.bookmarkedDocIds);
+        if (Array.isArray(snapshots)) {
+          setWorkspaceSnapshots(snapshots);
         }
-      }
-      if (Array.isArray(feedbackList)) {
-        setInvestorFeedback(feedbackList);
-      }
-      if (Array.isArray(inquiryList)) {
-        setContactInquiries(inquiryList);
-      }
-      if (session && !initialShareSnapshot) {
-        if (!hasStoredTab && NAV_TABS.includes(session.activeTab as NavTab)) {
-          setActiveTab(session.activeTab as NavTab);
-        }
-        if (!hasStoredStack && Array.isArray(session.selectedIds) && session.selectedIds.length > 0) {
-          const validIds = session.selectedIds.filter((id) => SPENTA_APPS.some((a) => a.id === id));
-          if (validIds.length > 0) {
-            setSelectedIds(validIds);
+        if (diligencePrefs) {
+          if (diligencePrefs.currency === 'USD' || diligencePrefs.currency === 'BDT') {
+            setCurrency(diligencePrefs.currency);
+          }
+          if (
+            diligencePrefs.personaTrack === 'financial' ||
+            diligencePrefs.personaTrack === 'technical' ||
+            diligencePrefs.personaTrack === 'strategic'
+          ) {
+            setPersonaTrack(diligencePrefs.personaTrack);
+          }
+          if (Array.isArray(diligencePrefs.bookmarkedDocIds)) {
+            setBookmarkedDocIds(diligencePrefs.bookmarkedDocIds);
           }
         }
-        if (!hasStoredDeploy && session.deploymentTarget in DEPLOYMENT_PROFILES) {
-          setDeploymentTargetState(session.deploymentTarget as DeploymentTargetId);
+        if (Array.isArray(feedbackList)) {
+          setInvestorFeedback(feedbackList);
         }
-        if (
-          typeof session.hitlConfidence === 'number' &&
-          Number.isFinite(session.hitlConfidence) &&
-          session.hitlConfidence >= 0.5 &&
-          session.hitlConfidence <= 0.99
-        ) {
-          setHitlConfidence(session.hitlConfidence);
+        if (Array.isArray(inquiryList)) {
+          setContactInquiries(inquiryList);
         }
-        if (
-          !hasStoredNeural &&
-          (session.neuralCoreSystem === 'solar-map' || session.neuralCoreSystem === 'spiral-galaxy')
-        ) {
-          setNeuralCoreState((prev) => ({
-            ...prev,
-            activeSystem: session.neuralCoreSystem as NeuralCoreSystem,
-          }));
+        if (!initialShareSnapshot) {
+          const restoredTab = session?.activeTab ?? latestSnapshot?.activeTab;
+          const restoredIds = session?.selectedIds ?? latestSnapshot?.selectedIds;
+          const restoredDeploy = session?.deploymentTarget ?? latestSnapshot?.deploymentTarget;
+          const restoredHitl = session?.hitlConfidence ?? latestSnapshot?.hitlConfidence;
+
+          if (!hasStoredTab && restoredTab && NAV_TABS.includes(restoredTab as NavTab)) {
+            setActiveTab(restoredTab as NavTab);
+          }
+          if (!hasStoredStack && Array.isArray(restoredIds) && restoredIds.length > 0) {
+            const validIds = restoredIds.filter((id) => SPENTA_APPS.some((a) => a.id === id));
+            if (validIds.length > 0) {
+              setSelectedIds(validIds);
+            }
+          }
+          if (!hasStoredDeploy && restoredDeploy && restoredDeploy in DEPLOYMENT_PROFILES) {
+            setDeploymentTargetState(restoredDeploy as DeploymentTargetId);
+          }
+          if (
+            typeof restoredHitl === 'number' &&
+            Number.isFinite(restoredHitl) &&
+            restoredHitl >= 0.5 &&
+            restoredHitl <= 0.99
+          ) {
+            setHitlConfidence(restoredHitl);
+          }
+          if (
+            !hasStoredNeural &&
+            session &&
+            (session.neuralCoreSystem === 'solar-map' ||
+              session.neuralCoreSystem === 'spiral-galaxy')
+          ) {
+            setNeuralCoreState((prev) => ({
+              ...prev,
+              activeSystem: session.neuralCoreSystem as NeuralCoreSystem,
+            }));
+          }
         }
-      }
-      setInvestorCalculatorHydrated(true);
-    });
+        setInvestorCalculatorHydrated(true);
+      },
+    );
 
     return () => {
       active = false;
     };
-  }, []);
+  }, [persistenceService]);
 
-  // Automatically persist investor calculator state to IndexedDB on every change
+  // Automatically persist investor calculator state & active workspace snapshot to IndexedDB on every change
   useEffect(() => {
     if (!investorCalculatorHydrated) return;
     const timer = window.setTimeout(() => {
-      void localPersistenceService.saveCalculatorState(investorCalculatorState);
+      void persistenceService.saveCalculatorState(investorCalculatorState);
+      void persistenceService.saveWorkspaceSnapshot({
+        id: DEFAULT_WORKSPACE_SNAPSHOT_KEY,
+        name: 'Auto-Saved Workspace',
+        activeTab,
+        selectedIds,
+        deploymentTarget,
+        hitlConfidence,
+        calculatorState: investorCalculatorState,
+      });
     }, 150);
     return () => window.clearTimeout(timer);
-  }, [investorCalculatorHydrated, investorCalculatorState]);
+  }, [
+    investorCalculatorHydrated,
+    investorCalculatorState,
+    activeTab,
+    selectedIds,
+    deploymentTarget,
+    hitlConfidence,
+    persistenceService,
+  ]);
 
   // Automatically persist diligence preferences (currency, persona track, Data Room bookmarks) to IndexedDB
   useEffect(() => {
     if (!investorCalculatorHydrated) return;
     const timer = window.setTimeout(() => {
-      void localPersistenceService.saveDiligencePrefs({
+      void persistenceService.saveDiligencePrefs({
         personaTrack,
         currency,
         bookmarkedDocIds,
       });
     }, 150);
     return () => window.clearTimeout(timer);
-  }, [investorCalculatorHydrated, personaTrack, currency, bookmarkedDocIds]);
+  }, [investorCalculatorHydrated, personaTrack, currency, bookmarkedDocIds, persistenceService]);
 
   // Automatically persist active tab and user session metadata to IndexedDB on every change
   useEffect(() => {
     if (!investorCalculatorHydrated) return;
     const timer = window.setTimeout(() => {
-      void localPersistenceService.saveUserSession({
+      void persistenceService.saveUserSession({
         activeTab,
         selectedIds,
         deploymentTarget,
@@ -1400,14 +1469,24 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     hitlConfidence,
     savedProposals.length,
     neuralCoreState.activeSystem,
+    persistenceService,
   ]);
 
-  // Flush latest calculator & user session state immediately when the browser tab hides or reloads
+  // Flush latest calculator, workspace snapshot & user session immediately when the browser tab hides or reloads
   useEffect(() => {
     if (!investorCalculatorHydrated) return;
     const flushNow = () => {
-      void localPersistenceService.saveCalculatorState(investorCalculatorState);
-      void localPersistenceService.saveUserSession({
+      void persistenceService.saveCalculatorState(investorCalculatorState);
+      void persistenceService.saveWorkspaceSnapshot({
+        id: DEFAULT_WORKSPACE_SNAPSHOT_KEY,
+        name: 'Auto-Saved Workspace',
+        activeTab,
+        selectedIds,
+        deploymentTarget,
+        hitlConfidence,
+        calculatorState: investorCalculatorState,
+      });
+      void persistenceService.saveUserSession({
         activeTab,
         selectedIds,
         deploymentTarget,
@@ -1427,6 +1506,7 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     hitlConfidence,
     savedProposals.length,
     neuralCoreState.activeSystem,
+    persistenceService,
   ]);
 
   const activeSimulationSystem: NeuralSimulationSystem =
