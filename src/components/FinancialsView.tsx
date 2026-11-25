@@ -84,6 +84,7 @@ import {
   computeInvestorRoiSeries,
   formatUsdFromK,
 } from './InvestorRoiCalculator';
+import { localPersistenceService } from '../utils/LocalPersistenceService';
 
 type ScenarioMode = 'conservative' | 'upside';
 type SortField = 'gmPct' | 'setupUsd' | 'minServerTier' | 'name';
@@ -190,6 +191,71 @@ export function FinancialsView() {
   const [scopeLineMetric, setScopeLineMetric] = useState<'revenue' | 'share'>('revenue');
   const [hiddenScopeLines, setHiddenScopeLines] = useState<RevenueScopeId[]>([]);
   const [csvExported, setCsvExported] = useState<boolean>(false);
+  const [idbHydrated, setIdbHydrated] = useState<boolean>(false);
+
+  // Hydrate investor calculator & scenario settings from IndexedDB offline storage
+  useEffect(() => {
+    let active = true;
+    void localPersistenceService.loadCalculatorState().then((saved) => {
+      if (!active) return;
+      if (saved) {
+        if (saved.scenario === 'conservative' || saved.scenario === 'upside') {
+          setScenario(saved.scenario);
+        }
+        if (saved.growthMode === 'conservative' || saved.growthMode === 'aggressive') {
+          setGrowthMode(saved.growthMode);
+        }
+        if (typeof saved.fxRate === 'number' && Number.isFinite(saved.fxRate)) {
+          setFxRate(Math.max(100, Math.min(160, saved.fxRate)));
+        }
+        if (typeof saved.taxRate === 'number' && Number.isFinite(saved.taxRate)) {
+          setTaxRate(Math.max(0, Math.min(45, saved.taxRate)));
+        }
+        if (typeof saved.exitMultiple === 'number' && Number.isFinite(saved.exitMultiple)) {
+          setExitMultiple(Math.max(6, Math.min(20, saved.exitMultiple)));
+        }
+        if (typeof saved.dilutionPct === 'number' && Number.isFinite(saved.dilutionPct)) {
+          setDilutionPct(Math.max(0, Math.min(40, saved.dilutionPct)));
+        }
+        if (typeof saved.investmentK === 'number' && Number.isFinite(saved.investmentK)) {
+          setInvestmentK(Math.max(25, Math.min(500, saved.investmentK)));
+        }
+        if (typeof saved.horizonYears === 'number' && Number.isFinite(saved.horizonYears)) {
+          setHorizonYears(Math.max(1, Math.min(5, Math.round(saved.horizonYears))));
+        }
+        if (typeof saved.compareGrowthScenarios === 'boolean') {
+          setCompareGrowthScenarios(saved.compareGrowthScenarios);
+        }
+        if (saved.projectedChartMetric === 'value' || saved.projectedChartMetric === 'moic') {
+          setProjectedChartMetric(saved.projectedChartMetric);
+        }
+        if (saved.subTab === 'pnl' || saved.subTab === 'roi' || saved.subTab === 'maps') {
+          setSubTab(saved.subTab);
+        }
+        if (
+          saved.mixPreset === 'fy27' ||
+          saved.mixPreset === 'fy31' ||
+          saved.mixPreset === 'arr-heavy'
+        ) {
+          setMixPreset(saved.mixPreset);
+        }
+        if (saved.mixScopeWeights && typeof saved.mixScopeWeights === 'object') {
+          setMixScopeWeights((prev) => ({
+            ...prev,
+            ...(saved.mixScopeWeights as Partial<Record<RevenueScopeId, number>>),
+          }));
+        }
+        if (typeof saved.mixOpexRatioPct === 'number' && Number.isFinite(saved.mixOpexRatioPct)) {
+          setMixOpexRatioPct(saved.mixOpexRatioPct);
+        }
+      }
+      setIdbHydrated(true);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const activeGrowthSpec = GROWTH_MODE_SPECS[growthMode];
 
@@ -581,6 +647,65 @@ export function FinancialsView() {
     [modeledSeries, scenario, horizonYears, exitMultiple, dilutionPct, investmentK, fxRate],
   );
   const terminalRoiPoint = investorRoiSeries[investorRoiSeries.length - 1] ?? investorRoiSeries[0];
+
+  // Offline-first persistence of investor calculator state and computed chart projections to IndexedDB
+  useEffect(() => {
+    if (!idbHydrated) return;
+    const timer = window.setTimeout(() => {
+      void localPersistenceService.saveCalculatorState({
+        scenario,
+        growthMode,
+        fxRate,
+        taxRate,
+        exitMultiple,
+        dilutionPct,
+        investmentK,
+        horizonYears,
+        compareGrowthScenarios,
+        projectedChartMetric,
+        subTab,
+        mixPreset,
+        mixScopeWeights,
+        mixOpexRatioPct,
+      });
+      void localPersistenceService.saveChartProjection('investor_roi_series', investorRoiSeries, {
+        scenario,
+        growthMode,
+        investmentK,
+        horizonYears,
+        exitMultiple,
+        dilutionPct,
+        compareGrowthScenarios,
+        projectedChartMetric,
+      });
+      void localPersistenceService.saveChartProjection('modeled_pnl_series', modeledSeries, {
+        scenario,
+        growthMode,
+        fxRate,
+        taxRate,
+      });
+    }, 180);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    idbHydrated,
+    scenario,
+    growthMode,
+    fxRate,
+    taxRate,
+    exitMultiple,
+    dilutionPct,
+    investmentK,
+    horizonYears,
+    compareGrowthScenarios,
+    projectedChartMetric,
+    subTab,
+    mixPreset,
+    mixScopeWeights,
+    mixOpexRatioPct,
+    investorRoiSeries,
+    modeledSeries,
+  ]);
 
   const summaryData = useMemo<QuarterlyExecutiveSummaryData>(() => {
     const activeRow = modeledSeries[summaryYearIndex] ?? modeledSeries[0];

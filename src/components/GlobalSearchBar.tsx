@@ -31,6 +31,7 @@ import {
   STARTER_RECIPES,
 } from '../data/spentaManifest';
 import { PendingNavFocus, useStack } from '../store/StackContext';
+import { preloadTabView } from '../utils/viewPreloaders';
 
 interface SearchEntry {
   id: string;
@@ -930,7 +931,12 @@ export function GlobalSearchBar() {
                     key={entry.id}
                     role="option"
                     aria-selected={isActive}
-                    onMouseEnter={() => setActiveIndex(idx)}
+                    onMouseEnter={() => {
+                      setActiveIndex(idx);
+                      if (entry.tab) {
+                        preloadTabView(entry.tab);
+                      }
+                    }}
                     onClick={() => handleSelect(entry)}
                     className={`px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
                       isActive

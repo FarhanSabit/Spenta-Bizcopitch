@@ -29,6 +29,7 @@ import {
   PathwayBrainLinkTarget,
   resolveBrainHubForPathwayNode,
 } from '../utils/pathwayBrainLink';
+import { localPersistenceService } from '../utils/LocalPersistenceService';
 
 const STACK_STORAGE_KEY = 'spenta_sovereign_stack_v1';
 const PROPOSALS_STORAGE_KEY = 'spenta_saved_proposals_v1';
@@ -857,6 +858,64 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
       // ignore storage quota errors
     }
   }, [neuralCoreState]);
+
+  // Hydrate session fallback from IndexedDB if localStorage was cleared or unavailable
+  useEffect(() => {
+    let active = true;
+    const hasStoredTab = (() => {
+      try {
+        return Boolean(window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY));
+      } catch {
+        return false;
+      }
+    })();
+    const hasStoredStack = (() => {
+      try {
+        return Boolean(window.localStorage.getItem(STACK_STORAGE_KEY));
+      } catch {
+        return false;
+      }
+    })();
+
+    if (hasStoredTab && hasStoredStack) return;
+
+    void localPersistenceService.loadUserSession().then((session) => {
+      if (!active || !session) return;
+      if (!hasStoredTab && NAV_TABS.includes(session.activeTab as NavTab)) {
+        setActiveTab(session.activeTab as NavTab);
+      }
+      if (!hasStoredStack && Array.isArray(session.selectedIds) && session.selectedIds.length > 0) {
+        const validIds = session.selectedIds.filter((id) => SPENTA_APPS.some((a) => a.id === id));
+        if (validIds.length > 0) {
+          setSelectedIds(validIds);
+        }
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Offline-first IndexedDB snapshot of active user session metadata
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void localPersistenceService.saveUserSession({
+        activeTab,
+        selectedIds,
+        deploymentTarget,
+        savedProposalsCount: savedProposals.length,
+        neuralCoreSystem: neuralCoreState.activeSystem,
+      });
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [
+    activeTab,
+    selectedIds,
+    deploymentTarget,
+    savedProposals.length,
+    neuralCoreState.activeSystem,
+  ]);
 
   const activeSimulationSystem: NeuralSimulationSystem =
     neuralCoreState.activeSystem === 'solar-map'

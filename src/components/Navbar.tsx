@@ -5,9 +5,8 @@ import { useTheme } from '../context/ThemeContext';
 import { useStack } from '../store/StackContext';
 import { SpentaLogo } from './SpentaLogo';
 import {
-  preloadAiAssistant,
-  preloadStackComposer,
-  preloadTabView,
+  getPanelPreloadHandlers,
+  getTabPreloadHandlers,
 } from '../utils/viewPreloaders';
 
 export function Navbar() {
@@ -37,8 +36,7 @@ export function Navbar() {
         {/* Zone 1: Brand Wordmark + Subtle Hairline Divider */}
         <button
           type="button"
-          onMouseEnter={() => preloadTabView('App Vault')}
-          onFocus={() => preloadTabView('App Vault')}
+          {...getTabPreloadHandlers('App Vault')}
           onClick={() => handleSelectTab('App Vault')}
           className="flex items-center gap-2.5 shrink-0 cursor-pointer focus:outline-none"
           aria-label="Spenta Sovereign OS Home"
@@ -61,8 +59,7 @@ export function Navbar() {
               <button
                 key={tab}
                 type="button"
-                onMouseEnter={() => preloadTabView(tab)}
-                onFocus={() => preloadTabView(tab)}
+                {...(active ? {} : getTabPreloadHandlers(tab))}
                 onClick={() => handleSelectTab(tab)}
                 className={`relative whitespace-nowrap shrink-0 px-2 xl:px-2.5 py-1.5 rounded-md text-xs xl:text-[13px] font-medium transition-colors cursor-pointer ${
                   active
@@ -126,8 +123,7 @@ export function Navbar() {
 
           <button
             type="button"
-            onMouseEnter={preloadStackComposer}
-            onFocus={preloadStackComposer}
+            {...getPanelPreloadHandlers('stack-composer')}
             onClick={() => setDrawerOpen(!drawerOpen)}
             className="inline-flex items-center gap-1.5 h-9 sm:h-8 px-2.5 sm:px-3.5 rounded-md bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
@@ -165,8 +161,7 @@ export function Navbar() {
                 <button
                   key={tab}
                   type="button"
-                  onMouseEnter={() => preloadTabView(tab)}
-                  onFocus={() => preloadTabView(tab)}
+                  {...(active ? {} : getTabPreloadHandlers(tab))}
                   onClick={() => handleSelectTab(tab)}
                   className={`min-h-[44px] px-3 py-2.5 rounded-lg text-xs font-medium text-left transition-colors cursor-pointer ${
                     active
@@ -239,8 +234,7 @@ export function Navbar() {
             </button>
             <button
               type="button"
-              onMouseEnter={preloadAiAssistant}
-              onFocus={preloadAiAssistant}
+              {...getPanelPreloadHandlers('ai-assistant')}
               onClick={() => {
                 setMobileMenuOpen(false);
                 setAiAssistantOpen(true);

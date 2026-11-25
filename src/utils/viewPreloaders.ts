@@ -1,5 +1,18 @@
 import type { NavTab } from '../data/spentaManifest';
 
+export type PreloadPanelId = 'stack-composer' | 'ai-assistant';
+export type PreloadStatus = 'idle' | 'loading' | 'loaded';
+
+interface PreloadEntry {
+  status: PreloadStatus;
+  promise?: Promise<unknown>;
+}
+
+interface NetworkInfoLike {
+  saveData?: boolean;
+  effectiveType?: string;
+}
+
 export const viewImporters = {
   'App Vault': () =>
     import('../components/SpentaBrainVault').then((m) => ({ default: m.SpentaBrainVault })),
@@ -23,31 +36,116 @@ export const stackComposerImporter = () =>
 export const aiAssistantImporter = () =>
   import('../components/SpentaAiAssistant').then((m) => ({ default: m.SpentaAiAssistant }));
 
-const preloadCache = new Map<string, Promise<unknown>>();
+/**
+ * Pure, testable speculative bundle preload controller that guarantees each
+ * lazy view or panel bundle is prefetched at most once, skips redundant fetches
+ * for already-mounted views, and respects browser Data Saver hints.
+ */
+export function createPreloadRegistry(options?: {
+  shouldSkipSpeculative?: () => boolean;
+}) {
+  const entries = new Map<string, PreloadEntry>();
 
-function runPreload(key: string, loader: () => Promise<unknown>): void {
-  if (preloadCache.has(key)) return;
-  const pending = loader().catch(() => {
-    // Allow future hover/click attempts to retry if a transient network glitch occurs
-    preloadCache.delete(key);
-  });
-  preloadCache.set(key, pending);
+  const defaultSkipCheck = (): boolean => {
+    if (typeof navigator === 'undefined') return false;
+    if (navigator.onLine === false) return true;
+    const conn = (navigator as Navigator & { connection?: NetworkInfoLike }).connection;
+    if (!conn) return false;
+    return Boolean(conn.saveData || conn.effectiveType === '2g' || conn.effectiveType === 'slow-2g');
+  };
+
+  const shouldSkip = options?.shouldSkipSpeculative ?? defaultSkipCheck;
+
+  function markLoaded(key: string): void {
+    entries.set(key, { status: 'loaded' });
+  }
+
+  function getStatus(key: string): PreloadStatus {
+    return entries.get(key)?.status ?? 'idle';
+  }
+
+  function preloadOnce(key: string, loader: () => Promise<unknown>): Promise<unknown> | null {
+    const existing = entries.get(key);
+    if (existing?.status === 'loaded') {
+      return null;
+    }
+    if (existing?.status === 'loading' && existing.promise) {
+      return existing.promise;
+    }
+    if (shouldSkip()) {
+      return null;
+    }
+
+    const pending = Promise.resolve()
+      .then(() => loader())
+      .then((mod) => {
+        entries.set(key, { status: 'loaded' });
+        return mod;
+      })
+      .catch(() => {
+        // Clear failed entry so subsequent user hover/focus or click can retry cleanly.
+        entries.delete(key);
+        return null;
+      });
+
+    entries.set(key, { status: 'loading', promise: pending });
+    return pending;
+  }
+
+  function reset(): void {
+    entries.clear();
+  }
+
+  return {
+    markLoaded,
+    getStatus,
+    preloadOnce,
+    reset,
+  };
 }
 
-/**
- * Prefetches a tab's code-split bundle on hover/focus so tab switches feel instant.
- */
+const defaultRegistry = createPreloadRegistry();
+
 export function preloadTabView(tab: NavTab): void {
   const loader = viewImporters[tab];
-  if (loader) {
-    runPreload(`tab:${tab}`, loader);
-  }
+  if (!loader) return;
+  void defaultRegistry.preloadOnce(`tab:${tab}`, loader);
+}
+
+export function markTabViewLoaded(tab: NavTab): void {
+  defaultRegistry.markLoaded(`tab:${tab}`);
+}
+
+export function getTabPreloadStatus(tab: NavTab): PreloadStatus {
+  return defaultRegistry.getStatus(`tab:${tab}`);
 }
 
 export function preloadStackComposer(): void {
-  runPreload('panel:stack-composer', stackComposerImporter);
+  void defaultRegistry.preloadOnce('panel:stack-composer', stackComposerImporter);
+}
+
+export function markStackComposerLoaded(): void {
+  defaultRegistry.markLoaded('panel:stack-composer');
 }
 
 export function preloadAiAssistant(): void {
-  runPreload('panel:ai-assistant', aiAssistantImporter);
+  void defaultRegistry.preloadOnce('panel:ai-assistant', aiAssistantImporter);
+}
+
+export function getTabPreloadHandlers(tab: NavTab) {
+  const trigger = () => preloadTabView(tab);
+  return {
+    onMouseEnter: trigger,
+    onFocus: trigger,
+    onTouchStart: trigger,
+  } as const;
+}
+
+export function getPanelPreloadHandlers(panel: PreloadPanelId) {
+  const trigger = panel === 'stack-composer' ? preloadStackComposer : preloadAiAssistant;
+  return {
+    onMouseEnter: trigger,
+    onFocus: trigger,
+    onTouchStart: trigger,
+  } as const;
 }

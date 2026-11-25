@@ -12,7 +12,9 @@ import { ResilientErrorBoundary } from './components/ResilientErrorBoundary';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 import {
   aiAssistantImporter,
-  preloadTabView,
+  getTabPreloadHandlers,
+  markStackComposerLoaded,
+  markTabViewLoaded,
   stackComposerImporter,
   viewImporters,
 } from './utils/viewPreloaders';
@@ -96,7 +98,12 @@ function PortalShell() {
   const [recheckingHealth, setRecheckingHealth] = useState(false);
 
   useEffect(() => {
+    markTabViewLoaded(activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
     if (drawerOpen) {
+      markStackComposerLoaded();
       setHasOpenedDrawer(true);
     }
   }, [drawerOpen]);
@@ -289,8 +296,7 @@ function PortalShell() {
             </span>
             <button
               type="button"
-              onMouseEnter={() => preloadTabView('Resources')}
-              onFocus={() => preloadTabView('Resources')}
+              {...getTabPreloadHandlers('Resources')}
               onClick={() => {
                 setActiveTab('Resources');
                 window.setTimeout(() => {
