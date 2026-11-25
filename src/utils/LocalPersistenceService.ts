@@ -159,6 +159,17 @@ export interface PersistenceReconciliationResult {
   reconciledAt: string;
 }
 
+export type PersistenceSyncStatus = 'synced' | 'syncing' | 'offline';
+
+export interface PersistenceSyncState {
+  status: PersistenceSyncStatus;
+  isOnline: boolean;
+  activeOperations: number;
+  lastSyncedAt: string | null;
+  revision: number;
+  backend: 'indexeddb' | 'fallback';
+}
+
 interface StoredRow<T = unknown> {
   id: string;
   value: T;
@@ -208,6 +219,14 @@ export class LocalPersistenceService {
   private readonly dbName: string;
   private readonly dbVersion: number;
   private dbPromise: Promise<IDBPDatabase<SpentaOfflineDBSchema> | null> | null = null;
+  private readonly listeners = new Set<(state: PersistenceSyncState) => void>();
+  private activeOperations = 0;
+  private lastSyncedAt: string | null = null;
+  private revision = 0;
+  private isOnlineState: boolean =
+    typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
+      ? navigator.onLine
+      : true;
   private readonly memoryFallback: Record<PersistenceStoreName, Map<string, StoredRow>> = {
     investorCalculator: new Map(),
     calculatorScenarios: new Map(),
@@ -222,6 +241,61 @@ export class LocalPersistenceService {
   constructor(dbName = PERSISTENCE_DB_NAME, dbVersion = PERSISTENCE_DB_VERSION) {
     this.dbName = dbName;
     this.dbVersion = dbVersion;
+  }
+
+  getSyncState(): PersistenceSyncState {
+    const status: PersistenceSyncStatus = !this.isOnlineState
+      ? 'offline'
+      : this.activeOperations > 0
+        ? 'syncing'
+        : 'synced';
+    return {
+      status,
+      isOnline: this.isOnlineState,
+      activeOperations: this.activeOperations,
+      lastSyncedAt: this.lastSyncedAt,
+      revision: this.revision,
+      backend: this.getStorageBackend(),
+    };
+  }
+
+  private emitSyncState(): void {
+    const snapshot = this.getSyncState();
+    for (const listener of this.listeners) {
+      try {
+        listener(snapshot);
+      } catch {
+        // ignore subscriber errors
+      }
+    }
+  }
+
+  subscribe(listener: (state: PersistenceSyncState) => void): () => void {
+    this.listeners.add(listener);
+    listener(this.getSyncState());
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  setOnlineStatus(online: boolean): void {
+    if (this.isOnlineState === online) return;
+    this.isOnlineState = online;
+    this.emitSyncState();
+  }
+
+  private beginSyncOperation(): void {
+    this.activeOperations += 1;
+    this.emitSyncState();
+  }
+
+  private endSyncOperation(didMutate: boolean): void {
+    this.activeOperations = Math.max(0, this.activeOperations - 1);
+    if (didMutate) {
+      this.lastSyncedAt = new Date().toISOString();
+      this.revision += 1;
+    }
+    this.emitSyncState();
   }
 
   private openDatabase(): Promise<IDBPDatabase<SpentaOfflineDBSchema> | null> {
@@ -329,22 +403,31 @@ export class LocalPersistenceService {
   }
 
   async setRecord<T>(store: PersistenceStoreName, key: string, value: T): Promise<void> {
-    const row: StoredRow<T> = {
-      id: key,
-      value,
-      updatedAt: new Date().toISOString(),
-    };
-
-    const db = await this.openDatabase();
-    if (!db) {
-      this.writeFallback(store, key, row);
-      return;
-    }
-
+    this.beginSyncOperation();
+    let mutated = false;
     try {
-      await db.put(store, row);
-    } catch {
-      this.writeFallback(store, key, row);
+      const row: StoredRow<T> = {
+        id: key,
+        value,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const db = await this.openDatabase();
+      if (!db) {
+        this.writeFallback(store, key, row);
+        mutated = true;
+        return;
+      }
+
+      try {
+        await db.put(store, row);
+        mutated = true;
+      } catch {
+        this.writeFallback(store, key, row);
+        mutated = true;
+      }
+    } finally {
+      this.endSyncOperation(mutated);
     }
   }
 
@@ -399,14 +482,21 @@ export class LocalPersistenceService {
   }
 
   async deleteRecord(store: PersistenceStoreName, key: string): Promise<void> {
-    this.deleteFallback(store, key);
-    const db = await this.openDatabase();
-    if (!db) return;
-
+    this.beginSyncOperation();
+    let mutated = false;
     try {
-      await db.delete(store, key);
-    } catch {
-      // ignore IndexedDB delete error; fallback already cleared
+      this.deleteFallback(store, key);
+      mutated = true;
+      const db = await this.openDatabase();
+      if (!db) return;
+
+      try {
+        await db.delete(store, key);
+      } catch {
+        // ignore IndexedDB delete error; fallback already cleared
+      }
+    } finally {
+      this.endSyncOperation(mutated);
     }
   }
 
@@ -706,37 +796,47 @@ export class LocalPersistenceService {
   }
 
   async clearAll(): Promise<void> {
-    for (const storeName of PERSISTENCE_STORES) {
-      this.memoryFallback[storeName].clear();
-    }
-
-    const ls = getLocalStorageSafe();
-    if (ls) {
-      try {
-        const prefix = `${FALLBACK_STORAGE_PREFIX}${this.dbName}:`;
-        const keysToRemove: string[] = [];
-        for (let i = 0; i < ls.length; i++) {
-          const k = ls.key(i);
-          if (k && k.startsWith(prefix)) keysToRemove.push(k);
-        }
-        keysToRemove.forEach((k) => ls.removeItem(k));
-      } catch {
-        // ignore
+    this.beginSyncOperation();
+    let cleared = false;
+    try {
+      for (const storeName of PERSISTENCE_STORES) {
+        this.memoryFallback[storeName].clear();
       }
-    }
 
-    const db = await this.openDatabase();
-    if (!db) return;
-
-    await Promise.all(
-      PERSISTENCE_STORES.map(async (storeName) => {
+      const ls = getLocalStorageSafe();
+      if (ls) {
         try {
-          await db.clear(storeName);
+          const prefix = `${FALLBACK_STORAGE_PREFIX}${this.dbName}:`;
+          const keysToRemove: string[] = [];
+          for (let i = 0; i < ls.length; i++) {
+            const k = ls.key(i);
+            if (k && k.startsWith(prefix)) keysToRemove.push(k);
+          }
+          keysToRemove.forEach((k) => ls.removeItem(k));
         } catch {
           // ignore
         }
-      }),
-    );
+      }
+
+      const db = await this.openDatabase();
+      if (!db) {
+        cleared = true;
+        return;
+      }
+
+      await Promise.all(
+        PERSISTENCE_STORES.map(async (storeName) => {
+          try {
+            await db.clear(storeName);
+          } catch {
+            // ignore
+          }
+        }),
+      );
+      cleared = true;
+    } finally {
+      this.endSyncOperation(cleared);
+    }
   }
 
   private estimateSerializedBytes(value: unknown): number {
@@ -835,43 +935,50 @@ export class LocalPersistenceService {
   }
 
   async reconcileAndVerify(): Promise<PersistenceReconciliationResult> {
-    const db = await this.openDatabase();
-    let verifiedStores = 0;
-    let totalEntries = 0;
+    this.beginSyncOperation();
+    let ok = false;
+    try {
+      const db = await this.openDatabase();
+      let verifiedStores = 0;
+      let totalEntries = 0;
 
-    if (db) {
-      // Flush any fallback records into IndexedDB and verify every object store is readable
-      for (const storeName of PERSISTENCE_STORES) {
-        const fallbackRows = this.listFallback(storeName);
-        for (const row of fallbackRows) {
+      if (db) {
+        // Flush any fallback records into IndexedDB and verify every object store is readable
+        for (const storeName of PERSISTENCE_STORES) {
+          const fallbackRows = this.listFallback(storeName);
+          for (const row of fallbackRows) {
+            try {
+              await db.put(storeName, row);
+            } catch {
+              // ignore individual fallback migration error
+            }
+          }
           try {
-            await db.put(storeName, row);
+            const count = await db.count(storeName);
+            totalEntries += count;
+            verifiedStores += 1;
           } catch {
-            // ignore individual fallback migration error
+            // store count failed
           }
         }
-        try {
-          const count = await db.count(storeName);
-          totalEntries += count;
+      } else {
+        for (const storeName of PERSISTENCE_STORES) {
+          totalEntries += this.listFallback(storeName).length;
           verifiedStores += 1;
-        } catch {
-          // store count failed
         }
       }
-    } else {
-      for (const storeName of PERSISTENCE_STORES) {
-        totalEntries += this.listFallback(storeName).length;
-        verifiedStores += 1;
-      }
-    }
 
-    return {
-      ok: verifiedStores === PERSISTENCE_STORES.length,
-      backend: db ? 'indexeddb' : 'fallback',
-      verifiedStores,
-      totalEntries,
-      reconciledAt: new Date().toISOString(),
-    };
+      ok = verifiedStores === PERSISTENCE_STORES.length;
+      return {
+        ok,
+        backend: db ? 'indexeddb' : 'fallback',
+        verifiedStores,
+        totalEntries,
+        reconciledAt: new Date().toISOString(),
+      };
+    } finally {
+      this.endSyncOperation(ok);
+    }
   }
 
   getStorageBackend(): 'indexeddb' | 'fallback' {

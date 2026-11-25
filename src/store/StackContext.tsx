@@ -592,6 +592,7 @@ interface StackContextValue {
   loadCaseStudyStack: (appIds: string[], label: string) => void;
   openBriefingSection: (sectionId: string) => void;
   // Offline persistence sync telemetry & storage management
+  persistenceService: LocalPersistenceService;
   syncStatus: SyncStatus;
   isOnline: boolean;
   lastSyncedAt: string | null;
@@ -1000,16 +1001,24 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     }),
   );
   const [investorCalculatorHydrated, setInvestorCalculatorHydrated] = useState<boolean>(false);
-  const [isOnline, setIsOnline] = useState<boolean>(() =>
-    typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
-      ? navigator.onLine
-      : true,
-  );
+  const [isOnline, setIsOnline] = useState<boolean>(() => persistenceService.getSyncState().isOnline);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
-  const [storageRevision, setStorageRevision] = useState<number>(0);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(() => persistenceService.getSyncState().lastSyncedAt);
+  const [storageRevision, setStorageRevision] = useState<number>(() => persistenceService.getSyncState().revision);
+  const [observedSyncStatus, setObservedSyncStatus] = useState<SyncStatus>(() => persistenceService.getSyncState().status);
   const activeSyncOpsRef = useRef<number>(0);
   const clearGuardUntilRef = useRef<number>(0);
+
+  useEffect(() => {
+    return persistenceService.subscribe((snapshot) => {
+      setIsOnline(snapshot.isOnline);
+      setObservedSyncStatus(snapshot.status);
+      if (snapshot.lastSyncedAt) {
+        setLastSyncedAt(snapshot.lastSyncedAt);
+      }
+      setStorageRevision(snapshot.revision);
+    });
+  }, [persistenceService]);
 
   const runTrackedPersistence = useCallback(
     async <T,>(task: () => Promise<T>, options?: { minVisualMs?: number }): Promise<T> => {
@@ -1037,7 +1046,11 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const syncStatus: SyncStatus = !isOnline ? 'offline' : isSyncing ? 'syncing' : 'synced';
+  const syncStatus: SyncStatus = !isOnline
+    ? 'offline'
+    : isSyncing || observedSyncStatus === 'syncing'
+      ? 'syncing'
+      : 'synced';
 
   useEffect(() => {
     if (!investorCalculatorHydrated) return;
@@ -1377,6 +1390,7 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
       typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
         ? navigator.onLine
         : isOnline;
+    persistenceService.setOnlineStatus(currentlyOnline);
     setIsOnline(currentlyOnline);
     if (!currentlyOnline) {
       setAutoNotice('Offline mode — changes remain safely queued in local IndexedDB until connection returns');
@@ -1494,12 +1508,14 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
   // Track browser online/offline connectivity and automatically reconcile when connection returns
   useEffect(() => {
     const handleOnline = () => {
+      persistenceService.setOnlineStatus(true);
       setIsOnline(true);
       if (investorCalculatorHydrated) {
         void runTrackedPersistence(() => persistenceService.reconcileAndVerify());
       }
     };
     const handleOffline = () => {
+      persistenceService.setOnlineStatus(false);
       setIsOnline(false);
     };
     window.addEventListener('online', handleOnline);
@@ -2546,6 +2562,7 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
         closeArPreview,
         loadCaseStudyStack,
         openBriefingSection,
+        persistenceService,
         syncStatus,
         isOnline,
         lastSyncedAt,

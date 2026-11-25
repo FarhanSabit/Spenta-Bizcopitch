@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { CheckCircle2, RefreshCw, WifiOff } from 'lucide-react';
 import { useStack } from '../store/StackContext';
+import { PersistenceSyncState } from '../utils/LocalPersistenceService';
 
 interface SyncStatusIndicatorProps {
   compact?: boolean;
@@ -20,10 +21,27 @@ function formatSyncTime(iso: string | null): string {
 }
 
 export function SyncStatusIndicator({ compact = false }: SyncStatusIndicatorProps) {
-  const { syncStatus, isOnline, lastSyncedAt, forceSync } = useStack();
+  const { persistenceService, syncStatus, isOnline, lastSyncedAt, forceSync } = useStack();
+  const [observedState, setObservedState] = useState<PersistenceSyncState>(() =>
+    persistenceService.getSyncState(),
+  );
+
+  useEffect(() => {
+    return persistenceService.subscribe((next) => {
+      setObservedState(next);
+    });
+  }, [persistenceService]);
+
+  const effectiveOnline = isOnline && observedState.isOnline;
+  const effectiveStatus = !effectiveOnline
+    ? 'offline'
+    : syncStatus === 'syncing' || observedState.status === 'syncing'
+      ? 'syncing'
+      : 'synced';
+  const effectiveLastSyncedAt = lastSyncedAt ?? observedState.lastSyncedAt;
 
   const statusConfig =
-    syncStatus === 'offline'
+    effectiveStatus === 'offline'
       ? {
           label: 'Offline',
           colorClass: 'text-[#B91C1C] dark:text-[#FCA5A5]',
@@ -31,7 +49,7 @@ export function SyncStatusIndicator({ compact = false }: SyncStatusIndicatorProp
           spin: false,
           detail: 'Offline — changes are stored locally in IndexedDB until connection returns.',
         }
-      : syncStatus === 'syncing'
+      : effectiveStatus === 'syncing'
         ? {
             label: 'Syncing',
             colorClass: 'text-[#B45309] dark:text-[#FCD34D]',
@@ -44,11 +62,11 @@ export function SyncStatusIndicator({ compact = false }: SyncStatusIndicatorProp
             colorClass: 'text-[#1C6E46] dark:text-[#6FCB9F]',
             Icon: CheckCircle2,
             spin: false,
-            detail: `IndexedDB synced · Last update ${formatSyncTime(lastSyncedAt)}`,
+            detail: `IndexedDB synced (${observedState.backend}) · Last update ${formatSyncTime(effectiveLastSyncedAt)}`,
           };
 
   const StatusIcon = statusConfig.Icon;
-  const forceDisabled = !isOnline || syncStatus === 'syncing';
+  const forceDisabled = !effectiveOnline || effectiveStatus === 'syncing';
 
   const handleForceSync = () => {
     void forceSync();
@@ -86,16 +104,16 @@ export function SyncStatusIndicator({ compact = false }: SyncStatusIndicatorProp
         onClick={handleForceSync}
         disabled={forceDisabled}
         aria-label={
-          !isOnline
+          !effectiveOnline
             ? 'Force Sync unavailable while offline'
-            : syncStatus === 'syncing'
+            : effectiveStatus === 'syncing'
               ? 'Synchronization in progress'
-              : 'Force Sync local IndexedDB storage'
+              : 'Force Sync local IndexedDB storage against master workspace state'
         }
         title={
-          !isOnline
+          !effectiveOnline
             ? 'Connection unavailable — reconnect to run Force Sync'
-            : `Reconcile IndexedDB stores now (Last sync: ${formatSyncTime(lastSyncedAt)})`
+            : `Re-verify local IndexedDB stores against workspace state (Last sync: ${formatSyncTime(effectiveLastSyncedAt)})`
         }
         className={`inline-flex items-center gap-1 text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1F3863] dark:focus-visible:ring-[#8FA6E8] rounded-r-md ${
           compact ? 'px-2.5 py-1.5 min-h-[36px]' : 'px-2 h-full'
@@ -106,7 +124,7 @@ export function SyncStatusIndicator({ compact = false }: SyncStatusIndicatorProp
         }`}
       >
         <RefreshCw
-          className={`w-3 h-3 shrink-0 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`}
+          className={`w-3 h-3 shrink-0 ${effectiveStatus === 'syncing' ? 'animate-spin' : ''}`}
           strokeWidth={1.75}
           aria-hidden="true"
         />

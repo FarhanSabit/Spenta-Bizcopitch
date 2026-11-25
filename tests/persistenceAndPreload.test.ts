@@ -243,4 +243,44 @@ describe('LocalPersistenceService (offline-first storage v3)', () => {
     assert.equal((await svc.listInvestorFeedback()).length, 0);
     assert.equal((await svc.listContactInquiries()).length, 0);
   });
+
+  it('emits live syncing, synced, and offline state updates via subscribe()', async () => {
+    const svc = new LocalPersistenceService('spenta_observer_test_db', 3);
+    const observedStatuses: string[] = [];
+    const unsubscribe = svc.subscribe((snapshot) => {
+      observedStatuses.push(snapshot.status);
+    });
+
+    assert.equal(observedStatuses[0], 'synced');
+    await svc.saveScenario({
+      name: 'Observer Check',
+      state: {
+        scenario: 'conservative',
+        growthMode: 'conservative',
+        fxRate: 122.61,
+        taxRate: 22,
+        exitMultiple: 10,
+        dilutionPct: 10,
+        investmentK: 100,
+        horizonYears: 5,
+        compareGrowthScenarios: false,
+        projectedChartMetric: 'value',
+        subTab: 'roi',
+        mixPreset: 'fy27',
+        mixScopeWeights: { one_time_builds: 50, recurring_saas: 30 },
+        mixOpexRatioPct: 28,
+      },
+    });
+    assert.ok(observedStatuses.includes('syncing'));
+    assert.equal(svc.getSyncState().status, 'synced');
+    assert.ok(svc.getSyncState().revision >= 1);
+
+    svc.setOnlineStatus(false);
+    assert.equal(svc.getSyncState().status, 'offline');
+    svc.setOnlineStatus(true);
+    assert.equal(svc.getSyncState().status, 'synced');
+
+    unsubscribe();
+    await svc.clearAll();
+  });
 });

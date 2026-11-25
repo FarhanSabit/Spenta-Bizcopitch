@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   CheckCircle2,
   Database,
   Download,
@@ -10,6 +11,7 @@ import {
   RotateCcw,
   Trash2,
   WifiOff,
+  X,
 } from 'lucide-react';
 import { useStack } from '../store/StackContext';
 import {
@@ -67,6 +69,15 @@ function formatBytes(bytes: number | null | undefined): string {
   return `${(mb / 1024).toFixed(2)} GB`;
 }
 
+function formatMegabytes(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined || !Number.isFinite(bytes) || bytes <= 0) {
+    return '0.000 MB';
+  }
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 10) return `${mb.toFixed(2)} MB`;
+  return `${mb.toFixed(3)} MB`;
+}
+
 function formatTimestamp(iso: string | null): string {
   if (!iso) return 'No writes recorded';
   try {
@@ -84,12 +95,12 @@ function formatTimestamp(iso: string | null): string {
 
 export function StorageManager() {
   const {
+    persistenceService,
     syncStatus,
     isOnline,
     lastSyncedAt,
     storageRevision,
     forceSync,
-    getStorageMetrics,
     clearLocalCachedData,
     exportOfflineBackup,
     savedCalculatorScenarios,
@@ -114,23 +125,34 @@ export function StorageManager() {
   const refreshMetrics = useCallback(async () => {
     setLoading(true);
     try {
-      const next = await getStorageMetrics();
+      const next = await persistenceService.getStorageMetrics();
       setMetrics(next);
     } finally {
       setLoading(false);
     }
-  }, [getStorageMetrics]);
+  }, [persistenceService]);
 
   useEffect(() => {
     void refreshMetrics();
   }, [refreshMetrics, storageRevision]);
+
+  useEffect(() => {
+    if (!confirmClearOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !clearing) {
+        setConfirmClearOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [confirmClearOpen, clearing]);
 
   const handleConfirmClear = async () => {
     setClearing(true);
     try {
       await clearLocalCachedData();
       setConfirmClearOpen(false);
-      const next = await getStorageMetrics();
+      const next = await persistenceService.getStorageMetrics();
       setMetrics(next);
     } finally {
       setClearing(false);
@@ -244,36 +266,78 @@ export function StorageManager() {
           </div>
         </div>
 
-        {/* Inline Two-Step Clear Confirmation (No window.confirm/alert) */}
+        {/* Confirmation Modal for Clear Cache (No window.confirm/alert) */}
         {confirmClearOpen && (
           <div
-            role="alertdialog"
-            aria-label="Confirm clearing local cached data"
-            className="mt-4 p-4 rounded-xl border border-[#FECACA] dark:border-[#7F1D1D] bg-[#FEF2F2] dark:bg-[#2A1215] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4"
+            onClick={() => {
+              if (!clearing) setConfirmClearOpen(false);
+            }}
           >
-            <div className="text-xs text-[#991B1B] dark:text-[#FECACA] leading-relaxed">
-              <strong className="font-semibold block text-[#7F1D1D] dark:text-[#FEE2E2]">
-                Purge all local application data and IndexedDB stores?
-              </strong>
-              This removes all saved investor calculator scenarios, workspace snapshots, cached chart projections, diligence notes, and offline inquiries from this browser.
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setConfirmClearOpen(false)}
-                disabled={clearing}
-                className="px-3 py-2 rounded-lg text-xs font-semibold border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] text-[#16213A] dark:text-[#E7EBF5] hover:opacity-90 cursor-pointer whitespace-nowrap"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleConfirmClear()}
-                disabled={clearing}
-                className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#DC2626] hover:bg-[#B91C1C] text-white cursor-pointer whitespace-nowrap disabled:opacity-60"
-              >
-                {clearing ? 'Clearing…' : 'Confirm Clear Cache'}
-              </button>
+            <div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="clear-cache-modal-title"
+              aria-describedby="clear-cache-modal-description"
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-5 sm:p-6 shadow-2xl"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-[#FEF2F2] dark:bg-[#2A1215] border border-[#FECACA] dark:border-[#7F1D1D] flex items-center justify-center shrink-0">
+                    <AlertTriangle
+                      className="w-4 h-4 text-[#DC2626] dark:text-[#FCA5A5]"
+                      strokeWidth={1.75}
+                    />
+                  </div>
+                  <div>
+                    <h3
+                      id="clear-cache-modal-title"
+                      className="text-base font-bold text-[#16213A] dark:text-[#E7EBF5]"
+                    >
+                      Delete Local IndexedDB Cache?
+                    </h3>
+                    <p
+                      id="clear-cache-modal-description"
+                      className="mt-1.5 text-xs text-[#4A5568] dark:text-[#A4ADC6] leading-relaxed"
+                    >
+                      This permanently purges all {metrics?.totalEntries ?? 0} cached entries across {metrics?.storeStats.length ?? 8} object stores in{' '}
+                      <span className="font-mono text-[#16213A] dark:text-[#E7EBF5]">
+                        {metrics?.dbName ?? 'spenta_sovereign_offline_db'}
+                      </span>
+                      , including saved investor calculator scenarios, workspace snapshots, diligence notes, and offline inquiries.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setConfirmClearOpen(false)}
+                  disabled={clearing}
+                  aria-label="Close confirmation modal"
+                  className="p-1 rounded-md text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5] cursor-pointer disabled:opacity-50"
+                >
+                  <X className="w-4 h-4" strokeWidth={1.75} />
+                </button>
+              </div>
+
+              <div className="mt-5 pt-4 border-t border-[#E4DFD6] dark:border-[#232B4A] flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmClearOpen(false)}
+                  disabled={clearing}
+                  className="px-3.5 py-2 rounded-lg text-xs font-semibold border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] text-[#16213A] dark:text-[#E7EBF5] hover:opacity-90 cursor-pointer whitespace-nowrap"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleConfirmClear()}
+                  disabled={clearing}
+                  className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-[#DC2626] hover:bg-[#B91C1C] text-white cursor-pointer whitespace-nowrap disabled:opacity-60"
+                >
+                  {clearing ? 'Deleting…' : 'Confirm Clear Cache'}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -282,7 +346,7 @@ export function StorageManager() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-5">
           <div className="p-4 rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529]">
             <div className="flex items-center justify-between text-xs text-[#5F6576] dark:text-[#8E96B0]">
-              <span>Used Space (IndexedDB)</span>
+              <span>Database Size (MB)</span>
               <HardDrive className="w-3.5 h-3.5 text-[#1F3863] dark:text-[#8FA6E8]" strokeWidth={1.6} />
             </div>
             <div
@@ -291,10 +355,10 @@ export function StorageManager() {
             >
               {loading && !metrics
                 ? '…'
-                : formatBytes(metrics?.estimatedPayloadBytes ?? 0)}
+                : formatMegabytes(metrics?.estimatedPayloadBytes ?? 0)}
             </div>
             <div className="mt-1 text-[11px] font-mono tabular-nums text-[#5F6576] dark:text-[#8E96B0]">
-              {(metrics?.estimatedPayloadBytes ?? 0).toLocaleString()} bytes
+              {formatBytes(metrics?.estimatedPayloadBytes ?? 0)} ({(metrics?.estimatedPayloadBytes ?? 0).toLocaleString()} bytes)
               {metrics?.usageBytes !== null && metrics?.quotaBytes
                 ? ` · Quota ${formatBytes(metrics.quotaBytes)}`
                 : ''}
