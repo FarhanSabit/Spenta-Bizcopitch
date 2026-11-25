@@ -26,6 +26,63 @@
   --neural-bloom-intensity: 1;
 }
 
+/* Professional High-Contrast Light Presentation Mode for Investor Briefings */
+html.spenta-high-contrast-light {
+  --spenta-canvas: #ffffff;
+  --spenta-band: #f8fafc;
+  --spenta-surface: #ffffff;
+  --spenta-border: #cbd5e1;
+  --spenta-border-strong: #94a3b8;
+  --spenta-ink: #09090b;
+  --spenta-body: #1e293b;
+  --spenta-muted: #334155;
+  --spenta-brand: #0f295c;
+  --spenta-brand-hover: #091a3d;
+  --spenta-brand-tint: #eff6ff;
+  --spenta-positive: #0f5132;
+  --spenta-caution: #78350f;
+  --spenta-danger: #991b1b;
+  color-scheme: light;
+}
+
+html.spenta-high-contrast-light body,
+html.spenta-high-contrast-light main {
+  background-color: #ffffff;
+  color: #09090b;
+}
+
+html.spenta-high-contrast-light header,
+html.spenta-high-contrast-light footer {
+  background-color: rgba(255, 255, 255, 0.96);
+  border-color: #cbd5e1;
+  color: #09090b;
+}
+
+html.spenta-high-contrast-light .bg-\[\#FAF8F4\],
+html.spenta-high-contrast-light .bg-\[\#FAF8F4\]\/92 {
+  background-color: #ffffff;
+}
+
+html.spenta-high-contrast-light .bg-\[\#F2EFE9\],
+html.spenta-high-contrast-light .bg-\[\#F2EFE9\]\/90 {
+  background-color: #f1f5f9;
+}
+
+html.spenta-high-contrast-light .border-\[\#E4DFD6\],
+html.spenta-high-contrast-light .border-\[\#CFC8BC\] {
+  border-color: #cbd5e1;
+}
+
+html.spenta-high-contrast-light .text-\[\#16213A\] {
+  color: #09090b;
+}
+
+html.spenta-high-contrast-light .text-\[\#5F6576\],
+html.spenta-high-contrast-light .text-\[\#4A5163\],
+html.spenta-high-contrast-light .text-\[\#4A5568\] {
+  color: #1e293b;
+}
+
 .dark {
   --spenta-canvas: #0b1020;
   --spenta-band: #0f1529;

@@ -63,8 +63,7 @@ export function parseShareThemeParam(search?: string): PaletteMode | null {
     if (!query) return null;
     const params = new URLSearchParams(query);
     const raw = params.get('theme');
-    if (raw === 'stone' || raw === 'nocturnal') return raw;
-    if (raw === 'light') return 'stone';
+    if (raw === 'stone' || raw === 'nocturnal' || raw === 'light') return raw;
     if (raw === 'dark') return 'nocturnal';
   } catch {
     // ignore malformed URL
@@ -113,7 +112,13 @@ export function parseShareUrlParams(search?: string): ParsedShareSnapshot | null
     const parsedTheme = parseShareThemeParam(query);
     if (parsedTheme) {
       result.paletteMode = parsedTheme;
-      summaryParts.push(parsedTheme === 'stone' ? 'Stone Light' : 'Nocturnal Navy');
+      summaryParts.push(
+        parsedTheme === 'stone'
+          ? 'Stone Light'
+          : parsedTheme === 'light'
+            ? 'High-Contrast Light'
+            : 'Nocturnal Navy',
+      );
     }
 
     const rawTab = params.get('tab')?.toLowerCase();

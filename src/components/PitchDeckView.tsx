@@ -520,7 +520,8 @@ export function PitchDeckView() {
             type="button"
             onClick={handlePrintPitchDeck}
             className="inline-flex items-center gap-1.5 min-h-[38px] px-3.5 py-1.5 rounded-lg text-xs font-semibold border border-[#1F3863]/30 dark:border-[#8FA6E8]/35 bg-[#FAF8F4] dark:bg-[#0F1529] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] hover:bg-[#F2EFE9] dark:hover:bg-[#1C2545] text-[#16213A] dark:text-[#E7EBF5] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            title="Open browser print dialog using .pitch-deck-print-deck branded layout"
+            aria-label="Download Pitch Deck PDF: Opens the print-formatted investor presentation with executive summary, L1–L6 architecture, unit economics, and Seed SAFE terms"
+            title="Download or print the investor Pitch Deck PDF (executive thesis, L1–L6 sovereign stack, 5-year P&L, and Seed SAFE terms)"
           >
             <Printer className="w-3.5 h-3.5 text-[#1F3863] dark:text-[#8FA6E8]" strokeWidth={1.65} />
             <span>Download Pitch Deck PDF</span>
@@ -1312,7 +1313,8 @@ export function PitchDeckView() {
           type="button"
           onClick={handlePrintPitchDeck}
           className="inline-flex items-center gap-2 min-h-[38px] px-3 sm:px-3.5 py-2 rounded-lg bg-[#1F3863] hover:bg-[#16213A] dark:bg-[#8FA6E8] dark:hover:bg-[#A6B9F0] text-white dark:text-[#0B1020] text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-          title="Open browser print dialog targeting .pitch-deck-print-deck"
+          aria-label="Download Pitch Deck PDF: Full 16:9 investor deck covering $500K Seed SAFE terms, L1–L6 sovereign architecture, and 5-year financials"
+          title="Download or print the formatted investor Pitch Deck PDF ($500K Seed SAFE, traction proof, architecture, and 5-year financials)"
         >
           <Printer className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
           <span className="sm:hidden">Print PDF</span>

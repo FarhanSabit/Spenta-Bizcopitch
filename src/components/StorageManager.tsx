@@ -234,10 +234,12 @@ export function StorageManager() {
             <button
               type="button"
               onClick={() => setConfirmClearOpen((open) => !open)}
+              aria-label="Clear Local Cache and purge local application data"
+              title="Purge all local IndexedDB stores and cached workspace data"
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[#FECACA] dark:border-[#7F1D1D] bg-[#FEF2F2] dark:bg-[#2A1215] text-[#B91C1C] dark:text-[#FCA5A5] hover:bg-[#FEE2E2] dark:hover:bg-[#3B181C] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" strokeWidth={1.6} />
-              <span>Clear Local Cached Data</span>
+              <span>Clear Local Cache</span>
             </button>
           </div>
         </div>
@@ -251,7 +253,7 @@ export function StorageManager() {
           >
             <div className="text-xs text-[#991B1B] dark:text-[#FECACA] leading-relaxed">
               <strong className="font-semibold block text-[#7F1D1D] dark:text-[#FEE2E2]">
-                Clear all IndexedDB stores and cached local workspace state?
+                Purge all local application data and IndexedDB stores?
               </strong>
               This removes all saved investor calculator scenarios, workspace snapshots, cached chart projections, diligence notes, and offline inquiries from this browser.
             </div>
@@ -280,7 +282,7 @@ export function StorageManager() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-5">
           <div className="p-4 rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529]">
             <div className="flex items-center justify-between text-xs text-[#5F6576] dark:text-[#8E96B0]">
-              <span>IndexedDB Storage Usage</span>
+              <span>Used Space (IndexedDB)</span>
               <HardDrive className="w-3.5 h-3.5 text-[#1F3863] dark:text-[#8FA6E8]" strokeWidth={1.6} />
             </div>
             <div
@@ -292,15 +294,32 @@ export function StorageManager() {
                 : formatBytes(metrics?.estimatedPayloadBytes ?? 0)}
             </div>
             <div className="mt-1 text-[11px] font-mono tabular-nums text-[#5F6576] dark:text-[#8E96B0]">
+              {(metrics?.estimatedPayloadBytes ?? 0).toLocaleString()} bytes
               {metrics?.usageBytes !== null && metrics?.quotaBytes
-                ? `Origin ${formatBytes(metrics.usageBytes)} / ${formatBytes(metrics.quotaBytes)}`
-                : 'Serialized IndexedDB payload'}
+                ? ` · Quota ${formatBytes(metrics.quotaBytes)}`
+                : ''}
             </div>
             <div className="mt-2.5 h-1.5 w-full rounded-full bg-[#E4DFD6] dark:bg-[#232B4A] overflow-hidden">
               <div
                 className="h-full rounded-full bg-[#1F3863] dark:bg-[#8FA6E8] transition-all"
                 style={{ width: `${quotaUsagePct ?? (metrics && metrics.estimatedPayloadBytes > 0 ? 4 : 0)}%` }}
               />
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529]">
+            <div className="flex items-center justify-between text-xs text-[#5F6576] dark:text-[#8E96B0]">
+              <span>Total Saved Scenarios</span>
+              <Layers className="w-3.5 h-3.5 text-[#1F3863] dark:text-[#8FA6E8]" strokeWidth={1.6} />
+            </div>
+            <div
+              data-testid="storage-scenario-workspace-entries"
+              className="mt-2 text-2xl font-bold font-mono tabular-nums text-[#16213A] dark:text-[#E7EBF5]"
+            >
+              {loading && !metrics ? '…' : (metrics?.scenarioEntries ?? 0)}
+            </div>
+            <div className="mt-1 text-[11px] text-[#5F6576] dark:text-[#8E96B0] font-mono tabular-nums">
+              {metrics?.workspaceEntries ?? 0} workspace snapshots ({scenarioAndWorkspaceCount} combined)
             </div>
           </div>
 
@@ -322,23 +341,7 @@ export function StorageManager() {
 
           <div className="p-4 rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529]">
             <div className="flex items-center justify-between text-xs text-[#5F6576] dark:text-[#8E96B0]">
-              <span>Scenario &amp; Workspace Entries</span>
-              <Layers className="w-3.5 h-3.5 text-[#1F3863] dark:text-[#8FA6E8]" strokeWidth={1.6} />
-            </div>
-            <div
-              data-testid="storage-scenario-workspace-entries"
-              className="mt-2 text-2xl font-bold font-mono tabular-nums text-[#16213A] dark:text-[#E7EBF5]"
-            >
-              {loading && !metrics ? '…' : scenarioAndWorkspaceCount}
-            </div>
-            <div className="mt-1 text-[11px] text-[#5F6576] dark:text-[#8E96B0] font-mono tabular-nums">
-              {metrics?.scenarioEntries ?? 0} scenarios · {metrics?.workspaceEntries ?? 0} snapshots
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529]">
-            <div className="flex items-center justify-between text-xs text-[#5F6576] dark:text-[#8E96B0]">
-              <span>Synchronization State</span>
+              <span>Last Sync Timestamp</span>
               {syncStatus === 'offline' ? (
                 <WifiOff className="w-3.5 h-3.5 text-[#B91C1C] dark:text-[#FCA5A5]" strokeWidth={1.6} />
               ) : syncStatus === 'syncing' ? (
@@ -362,7 +365,10 @@ export function StorageManager() {
                   ? 'Syncing'
                   : 'Synced'}
             </div>
-            <div className="mt-1 text-[11px] font-mono tabular-nums text-[#5F6576] dark:text-[#8E96B0] truncate">
+            <div
+              data-testid="storage-last-sync"
+              className="mt-1 text-[11px] font-mono tabular-nums text-[#5F6576] dark:text-[#8E96B0] truncate"
+            >
               {formatTimestamp(lastSyncedAt ?? metrics?.lastUpdatedAt ?? null)}
             </div>
           </div>

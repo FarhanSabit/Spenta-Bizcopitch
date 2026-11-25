@@ -1183,6 +1183,8 @@ export function InvestorBriefingView() {
                   type="button"
                   {...getTabPreloadHandlers('Pitch Deck')}
                   onClick={() => navigateToItem('Pitch Deck')}
+                  aria-label="Open Pitch Deck: 12-to-18 slide investor presentation covering the $500K Seed SAFE round, market traction, L1–L6 sovereign AI architecture, and 5-year P&L projections"
+                  title="Open interactive investor Pitch Deck ($500K Seed SAFE, traction metrics, L1–L6 architecture, and 5-year P&L with PDF export)"
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] text-xs font-semibold text-[#16213A] dark:text-[#E7EBF5] cursor-pointer whitespace-nowrap"
                 >
                   <Presentation className="w-3.5 h-3.5" />

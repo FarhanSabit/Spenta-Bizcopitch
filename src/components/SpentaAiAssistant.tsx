@@ -140,7 +140,7 @@ export function SpentaAiAssistant() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const scrollEndRef = useRef<HTMLDivElement | null>(null);
 
-  const isStone = paletteMode === 'stone';
+  const isStone = paletteMode !== 'nocturnal';
   const activeHub = REGIONAL_HUBS.find((h) => h.id === mapsHubId) ?? REGIONAL_HUBS[2];
   const groundingActive = groundingMode !== 'none';
 

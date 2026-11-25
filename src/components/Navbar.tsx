@@ -1,5 +1,16 @@
 import React, { useCallback, useState } from 'react';
-import { Grid3x3, Layers, Menu, Moon, Search, Sparkles, Sun, X } from 'lucide-react';
+import {
+  Contrast,
+  FolderLock,
+  Grid3x3,
+  Layers,
+  Menu,
+  Moon,
+  Search,
+  Sparkles,
+  Sun,
+  X,
+} from 'lucide-react';
 import { NAV_TABS, NavTab } from '../data/spentaManifest';
 import { useTheme } from '../context/ThemeContext';
 import { useStack } from '../store/StackContext';
@@ -10,8 +21,20 @@ import {
   preloadTabView,
 } from '../utils/viewPreloaders';
 
+const PITCH_DECK_DESCRIPTION =
+  'Pitch Deck: Interactive 18-slide investor presentation covering the $500K Seed SAFE round, L1–L6 sovereign AI architecture, 5-year financials, and 16:9 PDF export';
+
+const DATA_ROOM_DESCRIPTION =
+  'Data Room: Open confidential investor due diligence vault containing the Seed SAFE Memo, 5-Year Financial Model, Architecture Security Whitepaper, Cap Table, and Client Audit Reports';
+
 export function Navbar() {
-  const { theme, paletteMode, toggleTheme } = useTheme();
+  const {
+    theme,
+    paletteMode,
+    isHighContrastLight,
+    toggleTheme,
+    toggleHighContrastLight,
+  } = useTheme();
   const {
     activeTab,
     setActiveTab,
@@ -20,6 +43,7 @@ export function Navbar() {
     setDrawerOpen,
     setCommandPaletteOpen,
     setAiAssistantOpen,
+    setDataRoomOpen,
     mobileGridVisible,
     toggleMobileGrid,
   } = useStack();
@@ -42,22 +66,18 @@ export function Navbar() {
 
   return (
     <header className="sticky top-0 z-40 h-14 bg-[#FAF8F4]/92 dark:bg-[#0B1020]/92 backdrop-blur-md text-[#16213A] dark:text-[#E7EBF5] border-b border-[#E4DFD6] dark:border-[#232B4A] transition-colors no-print">
-      <div className="max-w-[1440px] mx-auto px-3.5 sm:px-6 h-full flex items-center justify-between gap-2.5 sm:gap-3">
-        {/* Zone 1: Brand Wordmark + Subtle Hairline Divider */}
+      <div className="max-w-[1440px] mx-auto px-3 sm:px-5 h-full flex items-center justify-between gap-2">
+        {/* Zone 1: Brand Wordmark */}
         <button
           type="button"
           onMouseEnter={() => handlePreloadTab('App Vault')}
           onFocus={() => handlePreloadTab('App Vault')}
           onTouchStart={() => handlePreloadTab('App Vault')}
           onClick={() => handleSelectTab('App Vault')}
-          className="flex items-center gap-2.5 shrink-0 cursor-pointer focus:outline-none"
+          className="flex items-center gap-2 shrink-0 cursor-pointer focus:outline-none"
           aria-label="Spenta Sovereign OS Home"
         >
-          <SpentaLogo className="h-7 sm:h-8" tone={theme === 'dark' ? 'dark-bg' : 'light-bg'} />
-          <span className="hidden 2xl:block h-4 w-px bg-[#CFC8BC] dark:bg-[#232B4A]" />
-          <span className="hidden 2xl:inline-block text-[11px] font-mono font-medium tracking-[0.12em] text-[#5F6576] dark:text-[#8E96B0] whitespace-nowrap">
-            SOVEREIGN OS
-          </span>
+          <SpentaLogo className="h-7" tone={theme === 'dark' ? 'dark-bg' : 'light-bg'} />
         </button>
 
         {/* Zone 2: 8 Clean Single-Line Navigation Tabs */}
@@ -67,18 +87,22 @@ export function Navbar() {
         >
           {NAV_TABS.map((tab) => {
             const active = activeTab === tab;
+            const isPitchDeck = tab === 'Pitch Deck';
             return (
               <button
                 key={tab}
                 type="button"
+                aria-current={active ? 'page' : undefined}
+                aria-label={isPitchDeck ? PITCH_DECK_DESCRIPTION : undefined}
+                title={isPitchDeck ? PITCH_DECK_DESCRIPTION : undefined}
                 onMouseEnter={() => handlePreloadTab(tab)}
                 onFocus={() => handlePreloadTab(tab)}
                 onTouchStart={() => handlePreloadTab(tab)}
                 onClick={() => handleSelectTab(tab)}
                 className={`relative whitespace-nowrap shrink-0 px-1.5 xl:px-2 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
                   active
-                    ? 'text-[#16213A] dark:text-[#E7EBF5] bg-[#F2EFE9] dark:bg-[#141A32]'
-                    : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5] hover:bg-[#F2EFE9]/70 dark:hover:bg-[#141A32]/70'
+                    ? 'text-[#0F172A] dark:text-[#E7EBF5] bg-[#EAE5DB] dark:bg-[#141A32] font-semibold'
+                    : 'text-[#475569] dark:text-[#8E96B0] hover:text-[#0F172A] dark:hover:text-[#E7EBF5] hover:bg-[#F2EFE9]/80 dark:hover:bg-[#141A32]/70'
                 }`}
               >
                 {tab}
@@ -90,8 +114,20 @@ export function Navbar() {
           })}
         </nav>
 
-        {/* Zone 3: Sync Status + Command Palette + Stone/Nocturnal Theme Toggle + Primary Stack Composer CTA */}
+        {/* Zone 3: Data Room + Sync Status + Command Search + Theme Switchers + Stack Composer */}
         <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            {...getPanelPreloadHandlers('data-room')}
+            onClick={() => setDataRoomOpen(true)}
+            aria-label={DATA_ROOM_DESCRIPTION}
+            title={DATA_ROOM_DESCRIPTION}
+            className="hidden sm:inline-flex items-center gap-1.5 h-8 px-2 rounded-md bg-[#F2EFE9] dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1C6E46] dark:hover:border-[#6FCB9F] text-[#16213A] dark:text-[#E7EBF5] text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          >
+            <FolderLock className="w-3.5 h-3.5 text-[#1C6E46] dark:text-[#6FCB9F] shrink-0" strokeWidth={1.65} />
+            <span className="hidden xl:inline">Data Room</span>
+          </button>
+
           <div className="hidden md:flex items-center shrink-0">
             <SyncStatusIndicator />
           </div>
@@ -99,13 +135,13 @@ export function Navbar() {
           <button
             type="button"
             onClick={() => setCommandPaletteOpen(true)}
-            className="inline-flex items-center justify-between gap-1.5 h-9 sm:h-8 px-2 sm:px-2.5 sm:w-40 md:w-44 lg:w-28 xl:w-32 2xl:w-44 rounded-md bg-[#F2EFE9] dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] text-[#4A5163] dark:text-[#C8D0E4] text-xs transition-colors cursor-pointer whitespace-nowrap min-w-0"
+            className="inline-flex items-center justify-between gap-1.5 h-9 sm:h-8 px-2 sm:w-32 md:w-36 lg:w-20 xl:w-28 2xl:w-36 rounded-md bg-[#F2EFE9] dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] text-[#4A5163] dark:text-[#C8D0E4] text-xs transition-colors cursor-pointer whitespace-nowrap min-w-0"
             aria-label="Open Command Palette (Cmd+K)"
             title="Search apps, tabs, recipes, L1–L6… (⌘K)"
           >
             <span className="inline-flex items-center gap-1.5 min-w-0">
               <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
-              <span className="hidden sm:inline truncate text-[#5F6576] dark:text-[#8E96B0]">
+              <span className="hidden xl:inline truncate text-[#5F6576] dark:text-[#8E96B0]">
                 Search…
               </span>
             </span>
@@ -117,26 +153,48 @@ export function Navbar() {
           <button
             type="button"
             onClick={toggleTheme}
+            aria-pressed={paletteMode === 'nocturnal'}
             className="inline-flex items-center justify-center gap-1.5 h-9 sm:h-8 px-2 rounded-md bg-[#F2EFE9] dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] text-[#16213A] dark:text-[#E7EBF5] text-xs font-medium transition-colors cursor-pointer shrink-0 whitespace-nowrap"
             aria-label={
               paletteMode === 'nocturnal'
-                ? 'Switch to Stone light theme'
-                : 'Switch to Nocturnal dark theme'
+                ? 'Switch from Dark mode to Stone paper theme'
+                : 'Switch from Stone light theme to Nocturnal Dark mode'
             }
             title={
               paletteMode === 'nocturnal'
-                ? 'Active: Nocturnal Navy (Click for Stone)'
-                : 'Active: Stone Light (Click for Nocturnal)'
+                ? 'Nocturnal Dark active — click for Stone paper theme'
+                : 'Click to toggle Nocturnal Dark / Stone paper theme'
             }
           >
             {paletteMode === 'nocturnal' ? (
-              <Sun className="w-3.5 h-3.5 text-[#8FA6E8]" strokeWidth={1.6} />
+              <Sun className="w-3.5 h-3.5 text-[#8FA6E8]" strokeWidth={1.75} />
             ) : (
-              <Moon className="w-3.5 h-3.5 text-[#1F3863]" strokeWidth={1.6} />
+              <Moon className="w-3.5 h-3.5 text-[#1F3863]" strokeWidth={1.75} />
             )}
-            <span className="hidden 2xl:inline">
-              {paletteMode === 'nocturnal' ? 'Nocturnal' : 'Stone'}
-            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleHighContrastLight}
+            aria-pressed={isHighContrastLight}
+            aria-label={
+              isHighContrastLight
+                ? 'Disable High-Contrast Light presentation mode and return to previous theme'
+                : 'Enable High-Contrast Light presentation mode for investor briefings'
+            }
+            title={
+              isHighContrastLight
+                ? 'High-Contrast Light presentation mode active — click to restore previous theme'
+                : 'Switch from Dark or Stone default to High-Contrast Light presentation mode for investor briefings'
+            }
+            className={`inline-flex items-center justify-center gap-1.5 h-9 sm:h-8 px-2 rounded-md border text-xs font-semibold transition-colors cursor-pointer shrink-0 whitespace-nowrap ${
+              isHighContrastLight
+                ? 'bg-[#09090B] text-white border-[#09090B]'
+                : 'bg-[#F2EFE9] dark:bg-[#141A32] border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] text-[#16213A] dark:text-[#E7EBF5]'
+            }`}
+          >
+            <Contrast className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
+            <span className="hidden xl:inline">Light</span>
           </button>
 
           <button
@@ -175,10 +233,14 @@ export function Navbar() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {NAV_TABS.map((tab) => {
               const active = activeTab === tab;
+              const isPitchDeck = tab === 'Pitch Deck';
               return (
                 <button
                   key={tab}
                   type="button"
+                  aria-current={active ? 'page' : undefined}
+                  aria-label={isPitchDeck ? PITCH_DECK_DESCRIPTION : undefined}
+                  title={isPitchDeck ? PITCH_DECK_DESCRIPTION : undefined}
                   onMouseEnter={() => handlePreloadTab(tab)}
                   onFocus={() => handlePreloadTab(tab)}
                   onTouchStart={() => handlePreloadTab(tab)}
@@ -186,7 +248,7 @@ export function Navbar() {
                   className={`min-h-[44px] px-3 py-2.5 rounded-lg text-xs font-medium text-left transition-colors cursor-pointer ${
                     active
                       ? 'bg-[#1F3863] dark:bg-[#8FA6E8] text-white dark:text-[#0B1020] font-semibold'
-                      : 'bg-white dark:bg-[#141A32] text-[#16213A] dark:text-[#C8D0E4] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] border border-[#E4DFD6] dark:border-[#232B4A]'
+                      : 'bg-white dark:bg-[#141A32] text-[#0F172A] dark:text-[#C8D0E4] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] border border-[#DCD6CA] dark:border-[#232B4A]'
                   }`}
                 >
                   {tab}
@@ -245,7 +307,21 @@ export function Navbar() {
             </button>
           </div>
 
-          <div className="pt-2.5 border-t border-[#E4DFD6] dark:border-[#232B4A] flex items-center justify-between gap-2">
+          <div className="pt-2.5 border-t border-[#E4DFD6] dark:border-[#232B4A] flex flex-wrap items-center justify-between gap-2">
+            <button
+              type="button"
+              {...getPanelPreloadHandlers('data-room')}
+              onClick={() => {
+                setMobileMenuOpen(false);
+                setDataRoomOpen(true);
+              }}
+              aria-label={DATA_ROOM_DESCRIPTION}
+              title={DATA_ROOM_DESCRIPTION}
+              className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg bg-white dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] text-xs font-medium text-[#16213A] dark:text-[#E7EBF5] cursor-pointer"
+            >
+              <FolderLock className="w-3.5 h-3.5 text-[#1C6E46] dark:text-[#6FCB9F]" strokeWidth={1.5} />
+              <span>Data Room</span>
+            </button>
             <button
               type="button"
               onClick={() => {
