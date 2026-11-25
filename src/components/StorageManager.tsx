@@ -234,12 +234,12 @@ export function StorageManager() {
             <button
               type="button"
               onClick={() => setConfirmClearOpen((open) => !open)}
-              aria-label="Clear Local Cache and purge local application data"
+              aria-label="Clear Cache and purge local application data"
               title="Purge all local IndexedDB stores and cached workspace data"
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[#FECACA] dark:border-[#7F1D1D] bg-[#FEF2F2] dark:bg-[#2A1215] text-[#B91C1C] dark:text-[#FCA5A5] hover:bg-[#FEE2E2] dark:hover:bg-[#3B181C] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" strokeWidth={1.6} />
-              <span>Clear Local Cache</span>
+              <span>Clear Cache</span>
             </button>
           </div>
         </div>

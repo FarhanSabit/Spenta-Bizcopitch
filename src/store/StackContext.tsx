@@ -1707,6 +1707,7 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!investorCalculatorHydrated) return;
     const flushNow = () => {
+      if (Date.now() < clearGuardUntilRef.current) return;
       void persistenceService.saveCalculatorState(investorCalculatorState);
       void persistenceService.saveWorkspaceSnapshot({
         id: DEFAULT_WORKSPACE_SNAPSHOT_KEY,

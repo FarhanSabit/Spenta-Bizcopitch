@@ -27,6 +27,24 @@ const PITCH_DECK_DESCRIPTION =
 const DATA_ROOM_DESCRIPTION =
   'Data Room: Open confidential investor due diligence vault containing the Seed SAFE Memo, 5-Year Financial Model, Architecture Security Whitepaper, Cap Table, and Client Audit Reports';
 
+const NAV_TAB_DESCRIPTIONS: Record<NavTab, string> = {
+  'App Vault':
+    'App Vault: Compose verified sovereign AI, ERP, fintech, and spatial XR stacks across 13 modules, explore the 3D Neural Core, and manage offline IndexedDB storage',
+  'Investor Briefing':
+    'Investor Briefing: Master Single Source of Truth covering the Dual-Engine thesis, $500K Seed SAFE terms, client deployments, and Q&A diligence',
+  Infographics:
+    'Infographics: Visual architecture blueprints, L1–L6 kernel data flows, deployment topologies, and sovereign enterprise moat comparisons',
+  Financials:
+    'Financials: Interactive 5-year P&L model, Seed SAFE investor ROI and MOIC calculator, 9-tier unit economics, and print-ready report',
+  'Spenta Core':
+    'Spenta Core: Technical specification of the L1–L6 sovereign AI kernel, air-gapped server tiers (T1–T4), and compliance controls',
+  'The Brain':
+    'The Brain: Interactive neural architecture graph mapping Spenta operational hubs, multi-agent orchestration, and data pipelines',
+  'Pitch Deck': PITCH_DECK_DESCRIPTION,
+  Resources:
+    'Resources: Technical whitepapers, compliance briefs, brand assets, founder inquiry form, and investor feedback workspace',
+};
+
 export function Navbar() {
   const {
     theme,
@@ -74,8 +92,9 @@ export function Navbar() {
           onFocus={() => handlePreloadTab('App Vault')}
           onTouchStart={() => handlePreloadTab('App Vault')}
           onClick={() => handleSelectTab('App Vault')}
-          className="flex items-center gap-2 shrink-0 cursor-pointer focus:outline-none"
-          aria-label="Spenta Sovereign OS Home"
+          className="flex items-center gap-2 shrink-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1F3863] dark:focus-visible:ring-[#8FA6E8] rounded-md"
+          aria-label="Spenta Sovereign OS Home — return to the App Vault module catalog"
+          title="Return to App Vault home view"
         >
           <SpentaLogo className="h-7" tone={theme === 'dark' ? 'dark-bg' : 'light-bg'} />
         </button>
@@ -87,14 +106,14 @@ export function Navbar() {
         >
           {NAV_TABS.map((tab) => {
             const active = activeTab === tab;
-            const isPitchDeck = tab === 'Pitch Deck';
+            const description = NAV_TAB_DESCRIPTIONS[tab];
             return (
               <button
                 key={tab}
                 type="button"
                 aria-current={active ? 'page' : undefined}
-                aria-label={isPitchDeck ? PITCH_DECK_DESCRIPTION : undefined}
-                title={isPitchDeck ? PITCH_DECK_DESCRIPTION : undefined}
+                aria-label={description}
+                title={description}
                 onMouseEnter={() => handlePreloadTab(tab)}
                 onFocus={() => handlePreloadTab(tab)}
                 onTouchStart={() => handlePreloadTab(tab)}
@@ -201,6 +220,9 @@ export function Navbar() {
             type="button"
             {...getPanelPreloadHandlers('stack-composer')}
             onClick={() => setDrawerOpen(!drawerOpen)}
+            aria-expanded={drawerOpen}
+            aria-label={`Stack Composer: Open selected module drawer (${selectedIds.length} modules selected) to review dependencies, server sizing, and architecture exports`}
+            title={`Stack Composer (${selectedIds.length} selected): Inspect integration links, required T1–T4 server hardware, and cost breakdown`}
             className="inline-flex items-center gap-1.5 h-9 sm:h-8 px-2.5 sm:px-3 rounded-md bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
             <Layers className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
@@ -233,14 +255,14 @@ export function Navbar() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {NAV_TABS.map((tab) => {
               const active = activeTab === tab;
-              const isPitchDeck = tab === 'Pitch Deck';
+              const description = NAV_TAB_DESCRIPTIONS[tab];
               return (
                 <button
                   key={tab}
                   type="button"
                   aria-current={active ? 'page' : undefined}
-                  aria-label={isPitchDeck ? PITCH_DECK_DESCRIPTION : undefined}
-                  title={isPitchDeck ? PITCH_DECK_DESCRIPTION : undefined}
+                  aria-label={description}
+                  title={description}
                   onMouseEnter={() => handlePreloadTab(tab)}
                   onFocus={() => handlePreloadTab(tab)}
                   onTouchStart={() => handlePreloadTab(tab)}
@@ -255,6 +277,50 @@ export function Navbar() {
                 </button>
               );
             })}
+          </div>
+
+          {/* High-Contrast Presentation Mode Switch (Mobile Drawer) */}
+          <div className="pt-2.5 border-t border-[#E4DFD6] dark:border-[#232B4A]">
+            <button
+              type="button"
+              onClick={toggleHighContrastLight}
+              role="switch"
+              aria-checked={isHighContrastLight}
+              aria-label={
+                isHighContrastLight
+                  ? 'Disable High-Contrast Light presentation mode and return to previous theme'
+                  : 'Enable High-Contrast Light presentation mode for investor briefings'
+              }
+              title="Toggle high-contrast light presentation mode optimized for boardroom projectors and investor briefings"
+              className="w-full min-h-[44px] flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-white dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2 text-left min-w-0">
+                <Contrast className="w-4 h-4 shrink-0 text-[#1F3863] dark:text-[#8FA6E8]" strokeWidth={1.75} />
+                <span className="min-w-0">
+                  <span className="block text-xs font-semibold text-[#16213A] dark:text-[#E7EBF5]">
+                    High-Contrast Presentation Light
+                  </span>
+                  <span className="block text-[10px] font-mono text-[#5F6576] dark:text-[#8E96B0] truncate">
+                    {isHighContrastLight
+                      ? 'Active — crisp white & ink contrast for briefings'
+                      : 'Switch from Dark/Stone to presentation light'}
+                  </span>
+                </span>
+              </span>
+              <span
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                  isHighContrastLight
+                    ? 'bg-[#09090B]'
+                    : 'bg-[#CFC8BC] dark:bg-[#2A355A]'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                    isHighContrastLight ? 'translate-x-4.5' : 'translate-x-1'
+                  }`}
+                />
+              </span>
+            </button>
           </div>
 
           {/* Mobile Sync Status & Force Sync */}
@@ -328,6 +394,8 @@ export function Navbar() {
                 setMobileMenuOpen(false);
                 setCommandPaletteOpen(true);
               }}
+              aria-label="Command Search: Open Cmd+K launcher to jump across apps, tabs, recipes, and L1–L6 layers"
+              title="Open Command Palette (⌘K)"
               className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg bg-white dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] text-xs font-medium text-[#16213A] dark:text-[#E7EBF5] cursor-pointer"
             >
               <Search className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -340,6 +408,8 @@ export function Navbar() {
                 setMobileMenuOpen(false);
                 setAiAssistantOpen(true);
               }}
+              aria-label="AI Advisor: Open Spenta executive diligence assistant for architecture and Seed SAFE Q&A"
+              title="Open Spenta AI Advisor"
               className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg bg-[#1C6E46]/12 dark:bg-[#6FCB9F]/15 border border-[#1C6E46]/35 dark:border-[#6FCB9F]/35 text-xs font-semibold text-[#1C6E46] dark:text-[#6FCB9F] cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" strokeWidth={1.5} />

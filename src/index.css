@@ -79,8 +79,24 @@ html.spenta-high-contrast-light .text-\[\#16213A\] {
 
 html.spenta-high-contrast-light .text-\[\#5F6576\],
 html.spenta-high-contrast-light .text-\[\#4A5163\],
-html.spenta-high-contrast-light .text-\[\#4A5568\] {
+html.spenta-high-contrast-light .text-\[\#4A5568\],
+html.spenta-high-contrast-light .text-\[\#7D8599\],
+html.spenta-high-contrast-light .text-\[\#64748B\] {
   color: #1e293b;
+}
+
+html.spenta-high-contrast-light .text-\[\#1F3863\] {
+  color: #0f295c;
+}
+
+html.spenta-high-contrast-light .text-\[\#1C6E46\] {
+  color: #0f5132;
+}
+
+html.spenta-high-contrast-light .bg-obsidian-grid {
+  background-image:
+    linear-gradient(to right, rgba(15, 41, 92, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 41, 92, 0.04) 1px, transparent 1px);
 }
 
 .dark {
