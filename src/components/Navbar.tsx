@@ -48,10 +48,10 @@ export function Navbar() {
           </span>
         </button>
 
-        {/* Zone 2: 7 Clean Single-Line Navigation Tabs */}
+        {/* Zone 2: 8 Clean Single-Line Navigation Tabs */}
         <nav
           aria-label="Primary portal navigation"
-          className="hidden lg:flex items-center gap-0.5 xl:gap-1 overflow-x-auto no-scrollbar min-w-0"
+          className="hidden lg:flex items-center gap-0.5 overflow-x-auto no-scrollbar min-w-0"
         >
           {NAV_TABS.map((tab) => {
             const active = activeTab === tab;
@@ -61,7 +61,7 @@ export function Navbar() {
                 type="button"
                 {...(active ? {} : getTabPreloadHandlers(tab))}
                 onClick={() => handleSelectTab(tab)}
-                className={`relative whitespace-nowrap shrink-0 px-2 xl:px-2.5 py-1.5 rounded-md text-xs xl:text-[13px] font-medium transition-colors cursor-pointer ${
+                className={`relative whitespace-nowrap shrink-0 px-1.5 xl:px-2 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
                   active
                     ? 'text-[#16213A] dark:text-[#E7EBF5] bg-[#F2EFE9] dark:bg-[#141A32]'
                     : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5] hover:bg-[#F2EFE9]/70 dark:hover:bg-[#141A32]/70'
@@ -81,7 +81,7 @@ export function Navbar() {
           <button
             type="button"
             onClick={() => setCommandPaletteOpen(true)}
-            className="inline-flex items-center justify-between gap-2 h-9 sm:h-8 px-2.5 sm:px-3 sm:w-56 md:w-72 lg:w-48 xl:w-64 2xl:w-80 rounded-md bg-[#F2EFE9] dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] text-[#4A5163] dark:text-[#C8D0E4] text-xs transition-colors cursor-pointer whitespace-nowrap min-w-0"
+            className="inline-flex items-center justify-between gap-2 h-9 sm:h-8 px-2.5 sm:px-3 sm:w-52 md:w-64 lg:w-36 xl:w-44 2xl:w-64 rounded-md bg-[#F2EFE9] dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] text-[#4A5163] dark:text-[#C8D0E4] text-xs transition-colors cursor-pointer whitespace-nowrap min-w-0"
             aria-label="Open Command Palette (Cmd+K)"
             title="Search apps, tabs, recipes, L1–L6… (⌘K)"
           >

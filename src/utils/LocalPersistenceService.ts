@@ -1,15 +1,29 @@
-export type PersistenceStoreName = 'investorCalculator' | 'chartProjections' | 'userSession';
+export type PersistenceStoreName =
+  | 'investorCalculator'
+  | 'calculatorScenarios'
+  | 'chartProjections'
+  | 'userSession'
+  | 'workspaceSnapshots'
+  | 'investorFeedback'
+  | 'diligencePrefs'
+  | 'contactInquiries';
 
 export const PERSISTENCE_DB_NAME = 'spenta_sovereign_offline_db';
-export const PERSISTENCE_DB_VERSION = 1;
+export const PERSISTENCE_DB_VERSION = 3;
 export const PERSISTENCE_STORES: readonly PersistenceStoreName[] = [
   'investorCalculator',
+  'calculatorScenarios',
   'chartProjections',
   'userSession',
+  'workspaceSnapshots',
+  'investorFeedback',
+  'diligencePrefs',
+  'contactInquiries',
 ] as const;
 
 export const DEFAULT_CALCULATOR_KEY = 'active_investor_calculator';
 export const DEFAULT_SESSION_KEY = 'active_user_session';
+export const DEFAULT_DILIGENCE_PREFS_KEY = 'active_diligence_prefs';
 
 export interface PersistedInvestorCalculatorState {
   scenario: 'conservative' | 'upside';
@@ -29,6 +43,15 @@ export interface PersistedInvestorCalculatorState {
   updatedAt: string;
 }
 
+export interface InvestorCalculatorScenario {
+  id: string;
+  name: string;
+  description?: string;
+  state: Omit<PersistedInvestorCalculatorState, 'updatedAt'>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PersistedChartProjectionRecord<T = unknown> {
   id: string;
   data: T;
@@ -45,14 +68,62 @@ export interface PersistedUserSessionData {
   updatedAt: string;
 }
 
+export interface UserWorkspaceSnapshot {
+  id: string;
+  name: string;
+  activeTab: string;
+  selectedIds: string[];
+  deploymentTarget: string;
+  hitlConfidence: number;
+  calculatorState: Omit<PersistedInvestorCalculatorState, 'updatedAt'>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type InvestorFeedbackPriority =
+  | 'Critical Inquiry'
+  | 'Strategic Suggestion'
+  | 'General Feedback';
+
+export interface InvestorFeedbackReply {
+  id: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface InvestorFeedbackRecord {
+  id: string;
+  section: string;
+  priority: InvestorFeedbackPriority;
+  sentimentScore: number; // 1 to 5
+  text: string;
+  replies: InvestorFeedbackReply[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DiligencePreferencesRecord {
+  personaTrack: 'financial' | 'technical' | 'strategic';
+  currency: 'USD' | 'BDT';
+  bookmarkedDocIds: string[];
+  updatedAt: string;
+}
+
+export interface OfflineContactInquiry {
+  id: string;
+  name: string;
+  organization: string;
+  email: string;
+  topic: string;
+  checkSize: string;
+  message: string;
+  createdAt: string;
+}
+
 export interface OfflinePersistenceBundle {
   schemaVersion: number;
   exportedAt: string;
-  stores: {
-    investorCalculator: Record<string, unknown>;
-    chartProjections: Record<string, unknown>;
-    userSession: Record<string, unknown>;
-  };
+  stores: Record<PersistenceStoreName, Record<string, unknown>>;
 }
 
 interface StoredRow<T = unknown> {
@@ -61,7 +132,7 @@ interface StoredRow<T = unknown> {
   updatedAt: string;
 }
 
-const FALLBACK_STORAGE_PREFIX = 'spenta_idb_fallback_v1:';
+const FALLBACK_STORAGE_PREFIX = 'spenta_idb_fallback_v2:';
 
 function hasIndexedDb(): boolean {
   return typeof indexedDB !== 'undefined' && typeof indexedDB.open === 'function';
@@ -78,12 +149,16 @@ function getLocalStorageSafe(): Storage | null {
   return null;
 }
 
+function createRecordId(prefix: string): string {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
 /**
- * Offline-first IndexedDB persistence engine for Spenta Sovereign OS.
- * Persists Investor ROI Calculator state, computed chart projection snapshots,
- * and user session metadata locally with zero server dependency.
- * Automatically falls back to localStorage / in-memory storage when IndexedDB
- * is unavailable (e.g., restricted iframes or headless test environments).
+ * Offline-first IndexedDB persistence service for Spenta Sovereign OS.
+ * Stores active investor calculator state, named investor calculator scenarios,
+ * computed chart projection series, user session state, and named user workspace
+ * snapshots with zero server reliance. Automatically falls back to localStorage
+ * and in-memory storage when IndexedDB is unavailable.
  */
 export class LocalPersistenceService {
   private readonly dbName: string;
@@ -91,8 +166,13 @@ export class LocalPersistenceService {
   private dbPromise: Promise<IDBDatabase | null> | null = null;
   private readonly memoryFallback: Record<PersistenceStoreName, Map<string, StoredRow>> = {
     investorCalculator: new Map(),
+    calculatorScenarios: new Map(),
     chartProjections: new Map(),
     userSession: new Map(),
+    workspaceSnapshots: new Map(),
+    investorFeedback: new Map(),
+    diligencePrefs: new Map(),
+    contactInquiries: new Map(),
   };
 
   constructor(dbName = PERSISTENCE_DB_NAME, dbVersion = PERSISTENCE_DB_VERSION) {
@@ -346,6 +426,7 @@ export class LocalPersistenceService {
     });
   }
 
+  // Active Investor Calculator State
   async saveCalculatorState(
     state: Omit<PersistedInvestorCalculatorState, 'updatedAt'> & { updatedAt?: string },
   ): Promise<void> {
@@ -363,6 +444,40 @@ export class LocalPersistenceService {
     );
   }
 
+  // Named Investor Calculator Scenarios
+  async saveCalculatorScenario(
+    input: Omit<InvestorCalculatorScenario, 'id' | 'createdAt' | 'updatedAt'> & {
+      id?: string;
+      createdAt?: string;
+    },
+  ): Promise<InvestorCalculatorScenario> {
+    const now = new Date().toISOString();
+    const record: InvestorCalculatorScenario = {
+      id: input.id ?? createRecordId('calc_scen'),
+      name: input.name.trim() || 'Untitled Scenario',
+      description: input.description?.trim() || undefined,
+      state: { ...input.state, mixScopeWeights: { ...input.state.mixScopeWeights } },
+      createdAt: input.createdAt ?? now,
+      updatedAt: now,
+    };
+    await this.setRecord('calculatorScenarios', record.id, record);
+    return record;
+  }
+
+  async getCalculatorScenario(id: string): Promise<InvestorCalculatorScenario | null> {
+    return this.getRecord<InvestorCalculatorScenario>('calculatorScenarios', id);
+  }
+
+  async listCalculatorScenarios(): Promise<InvestorCalculatorScenario[]> {
+    const all = await this.getAllRecords<InvestorCalculatorScenario>('calculatorScenarios');
+    return Object.values(all).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async deleteCalculatorScenario(id: string): Promise<void> {
+    await this.deleteRecord('calculatorScenarios', id);
+  }
+
+  // Computed Chart Projections
   async saveChartProjection<T>(
     projectionKey: string,
     data: T,
@@ -388,6 +503,7 @@ export class LocalPersistenceService {
     return Object.values(all);
   }
 
+  // Active User Session
   async saveUserSession(
     session: Omit<PersistedUserSessionData, 'updatedAt'> & { updatedAt?: string },
   ): Promise<void> {
@@ -402,11 +518,159 @@ export class LocalPersistenceService {
     return this.getRecord<PersistedUserSessionData>('userSession', DEFAULT_SESSION_KEY);
   }
 
+  // Named User Workspace Snapshots
+  async saveWorkspaceSnapshot(
+    input: Omit<UserWorkspaceSnapshot, 'id' | 'createdAt' | 'updatedAt'> & {
+      id?: string;
+      createdAt?: string;
+    },
+  ): Promise<UserWorkspaceSnapshot> {
+    const now = new Date().toISOString();
+    const record: UserWorkspaceSnapshot = {
+      id: input.id ?? createRecordId('ws_snap'),
+      name: input.name.trim() || 'Workspace Snapshot',
+      activeTab: input.activeTab,
+      selectedIds: [...input.selectedIds],
+      deploymentTarget: input.deploymentTarget,
+      hitlConfidence: input.hitlConfidence,
+      calculatorState: {
+        ...input.calculatorState,
+        mixScopeWeights: { ...input.calculatorState.mixScopeWeights },
+      },
+      createdAt: input.createdAt ?? now,
+      updatedAt: now,
+    };
+    await this.setRecord('workspaceSnapshots', record.id, record);
+    return record;
+  }
+
+  async getWorkspaceSnapshot(id: string): Promise<UserWorkspaceSnapshot | null> {
+    return this.getRecord<UserWorkspaceSnapshot>('workspaceSnapshots', id);
+  }
+
+  async listWorkspaceSnapshots(): Promise<UserWorkspaceSnapshot[]> {
+    const all = await this.getAllRecords<UserWorkspaceSnapshot>('workspaceSnapshots');
+    return Object.values(all).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async deleteWorkspaceSnapshot(id: string): Promise<void> {
+    await this.deleteRecord('workspaceSnapshots', id);
+  }
+
+  // Offline Investor Section Feedback & Sentiment Analytics
+  async saveInvestorFeedback(
+    input: Omit<InvestorFeedbackRecord, 'id' | 'replies' | 'createdAt' | 'updatedAt'> & {
+      id?: string;
+      replies?: InvestorFeedbackReply[];
+      createdAt?: string;
+    },
+  ): Promise<InvestorFeedbackRecord> {
+    const now = new Date().toISOString();
+    const record: InvestorFeedbackRecord = {
+      id: input.id ?? createRecordId('fb'),
+      section: input.section.trim() || 'Executive Overview',
+      priority: input.priority,
+      sentimentScore: Math.max(1, Math.min(5, Math.round(input.sentimentScore))),
+      text: input.text.trim(),
+      replies: input.replies ? [...input.replies] : [],
+      createdAt: input.createdAt ?? now,
+      updatedAt: now,
+    };
+    await this.setRecord('investorFeedback', record.id, record);
+    return record;
+  }
+
+  async listInvestorFeedback(): Promise<InvestorFeedbackRecord[]> {
+    const all = await this.getAllRecords<InvestorFeedbackRecord>('investorFeedback');
+    return Object.values(all).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async addFeedbackReply(
+    feedbackId: string,
+    replyText: string,
+  ): Promise<InvestorFeedbackRecord | null> {
+    const existing = await this.getRecord<InvestorFeedbackRecord>('investorFeedback', feedbackId);
+    if (!existing) return null;
+    const now = new Date().toISOString();
+    const updated: InvestorFeedbackRecord = {
+      ...existing,
+      replies: [
+        ...(existing.replies ?? []),
+        { id: createRecordId('rep'), text: replyText.trim(), createdAt: now },
+      ],
+      updatedAt: now,
+    };
+    await this.setRecord('investorFeedback', updated.id, updated);
+    return updated;
+  }
+
+  async deleteInvestorFeedback(id: string): Promise<void> {
+    await this.deleteRecord('investorFeedback', id);
+  }
+
+  // Diligence Preferences (Persona Track, Global Currency, Data Room Bookmarks)
+  async saveDiligencePrefs(
+    prefs: Omit<DiligencePreferencesRecord, 'updatedAt'> & { updatedAt?: string },
+  ): Promise<void> {
+    const payload: DiligencePreferencesRecord = {
+      ...prefs,
+      bookmarkedDocIds: Array.from(new Set(prefs.bookmarkedDocIds)),
+      updatedAt: prefs.updatedAt ?? new Date().toISOString(),
+    };
+    await this.setRecord('diligencePrefs', DEFAULT_DILIGENCE_PREFS_KEY, payload);
+  }
+
+  async loadDiligencePrefs(): Promise<DiligencePreferencesRecord | null> {
+    return this.getRecord<DiligencePreferencesRecord>('diligencePrefs', DEFAULT_DILIGENCE_PREFS_KEY);
+  }
+
+  // Offline Founder Contact & Term-Sheet Inquiries
+  async saveContactInquiry(
+    input: Omit<OfflineContactInquiry, 'id' | 'createdAt'> & { id?: string; createdAt?: string },
+  ): Promise<OfflineContactInquiry> {
+    const now = new Date().toISOString();
+    const record: OfflineContactInquiry = {
+      id: input.id ?? createRecordId('inq'),
+      name: input.name.trim(),
+      organization: input.organization.trim(),
+      email: input.email.trim(),
+      topic: input.topic.trim() || 'Seed SAFE Inquiry',
+      checkSize: input.checkSize.trim() || 'Undisclosed',
+      message: input.message.trim(),
+      createdAt: input.createdAt ?? now,
+    };
+    await this.setRecord('contactInquiries', record.id, record);
+    return record;
+  }
+
+  async listContactInquiries(): Promise<OfflineContactInquiry[]> {
+    const all = await this.getAllRecords<OfflineContactInquiry>('contactInquiries');
+    return Object.values(all).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async deleteContactInquiry(id: string): Promise<void> {
+    await this.deleteRecord('contactInquiries', id);
+  }
+
   async exportAllOfflineData(): Promise<OfflinePersistenceBundle> {
-    const [investorCalculator, chartProjections, userSession] = await Promise.all([
+    const [
+      investorCalculator,
+      calculatorScenarios,
+      chartProjections,
+      userSession,
+      workspaceSnapshots,
+      investorFeedback,
+      diligencePrefs,
+      contactInquiries,
+    ] = await Promise.all([
       this.getAllRecords('investorCalculator'),
+      this.getAllRecords('calculatorScenarios'),
       this.getAllRecords('chartProjections'),
       this.getAllRecords('userSession'),
+      this.getAllRecords('workspaceSnapshots'),
+      this.getAllRecords('investorFeedback'),
+      this.getAllRecords('diligencePrefs'),
+      this.getAllRecords('contactInquiries'),
     ]);
 
     return {
@@ -414,8 +678,13 @@ export class LocalPersistenceService {
       exportedAt: new Date().toISOString(),
       stores: {
         investorCalculator,
+        calculatorScenarios,
         chartProjections,
         userSession,
+        workspaceSnapshots,
+        investorFeedback,
+        diligencePrefs,
+        contactInquiries,
       },
     };
   }

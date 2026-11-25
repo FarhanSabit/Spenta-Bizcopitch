@@ -136,6 +136,8 @@ export function SpentaBrainVault() {
     clearPendingNavFocus,
     mobileGridVisible,
     toggleMobileGrid,
+    openBriefingSection,
+    setDataRoomOpen,
   } = useStack();
 
   const [viewMode, setViewMode] = useState<VaultViewMode>(loadStoredVaultViewMode);
@@ -248,6 +250,24 @@ export function SpentaBrainVault() {
               <p className="text-xs sm:text-sm text-[#4A5568] dark:text-[#A4ADC6] mt-2 max-w-2xl leading-relaxed">
                 Select modules across Operations and Experience hemispheres to verify native integrations, illuminate active L1–L6 layers, and size your air-gapped server baseline in real time.
               </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openBriefingSection('ssot-dual-engine')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1F3863] text-white dark:bg-[#8FA6E8] dark:text-[#0B1020] hover:opacity-90 transition-opacity cursor-pointer"
+                >
+                  <span>Master Investor Briefing (SSOT)</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={1.75} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDataRoomOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] text-[#16213A] dark:text-[#E7EBF5] hover:border-[#1C6E46] dark:hover:border-[#6FCB9F] transition-colors cursor-pointer"
+                >
+                  <span>Data Room</span>
+                  <ArrowUpRight className="w-3.5 h-3.5 text-[#1C6E46] dark:text-[#6FCB9F]" strokeWidth={1.75} />
+                </button>
+              </div>
             </div>
 
             {/* 3-Way View Mode Switcher */}

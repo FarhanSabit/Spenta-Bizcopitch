@@ -1,6 +1,12 @@
 import type { NavTab } from '../data/spentaManifest';
 
-export type PreloadPanelId = 'stack-composer' | 'ai-assistant';
+export type PreloadPanelId =
+  | 'stack-composer'
+  | 'ai-assistant'
+  | 'data-room'
+  | 'founder-contact'
+  | 'investor-intelligence'
+  | 'spatial-ar';
 export type PreloadStatus = 'idle' | 'loading' | 'loaded';
 
 interface PreloadEntry {
@@ -16,6 +22,8 @@ interface NetworkInfoLike {
 export const viewImporters = {
   'App Vault': () =>
     import('../components/SpentaBrainVault').then((m) => ({ default: m.SpentaBrainVault })),
+  'Investor Briefing': () =>
+    import('../components/InvestorBriefingView').then((m) => ({ default: m.InvestorBriefingView })),
   Infographics: () =>
     import('../components/InfographicsView').then((m) => ({ default: m.InfographicsView })),
   Financials: () =>
@@ -35,6 +43,24 @@ export const stackComposerImporter = () =>
 
 export const aiAssistantImporter = () =>
   import('../components/SpentaAiAssistant').then((m) => ({ default: m.SpentaAiAssistant }));
+
+export const dataRoomImporter = () =>
+  import('../components/briefing/DataRoomModal').then((m) => ({ default: m.DataRoomModal }));
+
+export const founderContactImporter = () =>
+  import('../components/briefing/FounderContactModal').then((m) => ({
+    default: m.FounderContactModal,
+  }));
+
+export const investorIntelligenceImporter = () =>
+  import('../components/briefing/InvestorIntelligenceModal').then((m) => ({
+    default: m.InvestorIntelligenceModal,
+  }));
+
+export const spatialArImporter = () =>
+  import('../components/briefing/SpatialArViewerModal').then((m) => ({
+    default: m.SpatialArViewerModal,
+  }));
 
 /**
  * Pure, testable speculative bundle preload controller that guarantees each
@@ -132,6 +158,22 @@ export function preloadAiAssistant(): void {
   void defaultRegistry.preloadOnce('panel:ai-assistant', aiAssistantImporter);
 }
 
+export function preloadDataRoom(): void {
+  void defaultRegistry.preloadOnce('panel:data-room', dataRoomImporter);
+}
+
+export function preloadFounderContact(): void {
+  void defaultRegistry.preloadOnce('panel:founder-contact', founderContactImporter);
+}
+
+export function preloadInvestorIntelligence(): void {
+  void defaultRegistry.preloadOnce('panel:investor-intelligence', investorIntelligenceImporter);
+}
+
+export function preloadSpatialAr(): void {
+  void defaultRegistry.preloadOnce('panel:spatial-ar', spatialArImporter);
+}
+
 export function getTabPreloadHandlers(tab: NavTab) {
   const trigger = () => preloadTabView(tab);
   return {
@@ -142,7 +184,28 @@ export function getTabPreloadHandlers(tab: NavTab) {
 }
 
 export function getPanelPreloadHandlers(panel: PreloadPanelId) {
-  const trigger = panel === 'stack-composer' ? preloadStackComposer : preloadAiAssistant;
+  const trigger = () => {
+    switch (panel) {
+      case 'stack-composer':
+        preloadStackComposer();
+        break;
+      case 'ai-assistant':
+        preloadAiAssistant();
+        break;
+      case 'data-room':
+        preloadDataRoom();
+        break;
+      case 'founder-contact':
+        preloadFounderContact();
+        break;
+      case 'investor-intelligence':
+        preloadInvestorIntelligence();
+        break;
+      case 'spatial-ar':
+        preloadSpatialAr();
+        break;
+    }
+  };
   return {
     onMouseEnter: trigger,
     onFocus: trigger,

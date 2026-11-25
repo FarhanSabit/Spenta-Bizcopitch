@@ -68,26 +68,42 @@ describe('createPreloadRegistry (once-only speculative preloading)', () => {
   });
 });
 
-describe('LocalPersistenceService (offline-first storage)', () => {
-  it('saves, loads, exports, imports, and clears calculator state, chart projections, and session data', async () => {
-    const svc = new LocalPersistenceService('spenta_unit_test_db', 1);
+describe('LocalPersistenceService (offline-first storage v3)', () => {
+  it('saves, loads, exports, imports, and clears calculator state, named scenarios, chart projections, session data, workspace snapshots, investor feedback, diligence prefs, and contact inquiries', async () => {
+    const svc = new LocalPersistenceService('spenta_unit_test_db', 3);
 
-    await svc.saveCalculatorState({
-      scenario: 'upside',
-      growthMode: 'aggressive',
-      fxRate: 125,
+    const calcState = {
+      scenario: 'upside' as const,
+      growthMode: 'aggressive' as const,
+      fxRate: 122.61,
       taxRate: 22,
       exitMultiple: 12,
       dilutionPct: 10,
       investmentK: 250,
       horizonYears: 4,
       compareGrowthScenarios: true,
-      projectedChartMetric: 'moic',
-      subTab: 'pnl',
-      mixPreset: 'fy31',
-      mixScopeWeights: { custom_ai: 40, recurring_saas: 60 },
+      projectedChartMetric: 'moic' as const,
+      subTab: 'pnl' as const,
+      mixPreset: 'fy31' as const,
+      mixScopeWeights: { one_time_builds: 24, recurring_saas: 44 },
       mixOpexRatioPct: 24,
+    };
+
+    await svc.saveCalculatorState(calcState);
+
+    const savedScenario = await svc.saveCalculatorScenario({
+      name: 'Board Upside $250K',
+      description: '4-year aggressive projection at 12x exit',
+      state: calcState,
     });
+    assert.ok(savedScenario.id);
+    assert.equal(savedScenario.name, 'Board Upside $250K');
+
+    const loadedScenario = await svc.getCalculatorScenario(savedScenario.id);
+    assert.equal(loadedScenario?.state.investmentK, 250);
+
+    const scenarioList = await svc.listCalculatorScenarios();
+    assert.equal(scenarioList.length, 1);
 
     await svc.saveChartProjection(
       'investor_roi_series',
@@ -99,12 +115,65 @@ describe('LocalPersistenceService (offline-first storage)', () => {
     );
 
     await svc.saveUserSession({
-      activeTab: 'Financials',
+      activeTab: 'Investor Briefing',
       selectedIds: ['icr_ops', 'genai_bi'],
       deploymentTarget: 'on-prem',
       savedProposalsCount: 2,
       neuralCoreSystem: 'solar-map',
     });
+
+    const snapshot = await svc.saveWorkspaceSnapshot({
+      name: 'Investor Demo Checkpoint',
+      activeTab: 'Investor Briefing',
+      selectedIds: ['icr_ops', 'genai_bi'],
+      deploymentTarget: 'on-prem',
+      hitlConfidence: 0.94,
+      calculatorState: calcState,
+    });
+    assert.ok(snapshot.id);
+
+    const loadedSnapshot = await svc.getWorkspaceSnapshot(snapshot.id);
+    assert.equal(loadedSnapshot?.name, 'Investor Demo Checkpoint');
+    assert.equal(loadedSnapshot?.calculatorState.horizonYears, 4);
+
+    const snapshotList = await svc.listWorkspaceSnapshots();
+    assert.equal(snapshotList.length, 1);
+
+    // v3 stores: Diligence Prefs, Investor Feedback + Replies, Contact Inquiries
+    await svc.saveDiligencePrefs({
+      currency: 'BDT',
+      personaTrack: 'financial',
+      bookmarkedDocIds: ['dr-safe-memo', 'dr-5yr-pnl'],
+    });
+    const loadedPrefs = await svc.loadDiligencePrefs();
+    assert.equal(loadedPrefs?.currency, 'BDT');
+    assert.equal(loadedPrefs?.personaTrack, 'financial');
+    assert.deepEqual(loadedPrefs?.bookmarkedDocIds, ['dr-safe-memo', 'dr-5yr-pnl']);
+
+    const feedback = await svc.saveInvestorFeedback({
+      section: '05. Recalibrated 9-Tier Unit Economics',
+      text: 'Strong gross margin expansion from Model A1 to C3.',
+      priority: 'High',
+      sentimentScore: 5,
+    });
+    assert.ok(feedback.id);
+    const updatedFeedback = await svc.addFeedbackReply(
+      feedback.id,
+      'Confirmed — Tier C3 leverages reusable L1–L6 containers.',
+    );
+    assert.equal(updatedFeedback?.replies.length, 1);
+    assert.equal((await svc.listInvestorFeedback()).length, 1);
+
+    const inquiry = await svc.saveContactInquiry({
+      name: 'A. Rahman',
+      email: 'ar@fund.vc',
+      organization: 'Apex Ventures',
+      topic: 'Seed SAFE Term Sheet',
+      checkSize: '$100K–$250K',
+      message: 'Requesting SAFE memo and Prime Bank case study walkthrough.',
+    });
+    assert.ok(inquiry.id);
+    assert.equal((await svc.listContactInquiries()).length, 1);
 
     const calc = await svc.loadCalculatorState();
     assert.equal(calc?.investmentK, 250);
@@ -119,16 +188,41 @@ describe('LocalPersistenceService (offline-first storage)', () => {
     assert.equal(proj?.data[1].moic, 4.48);
 
     const session = await svc.loadUserSession();
-    assert.equal(session?.activeTab, 'Financials');
+    assert.equal(session?.activeTab, 'Investor Briefing');
     assert.deepEqual(session?.selectedIds, ['icr_ops', 'genai_bi']);
 
     const bundle = await svc.exportAllOfflineData();
+    assert.equal(Object.keys(bundle.stores.calculatorScenarios).length, 1);
+    assert.equal(Object.keys(bundle.stores.workspaceSnapshots).length, 1);
+    assert.equal(Object.keys(bundle.stores.investorFeedback).length, 1);
+    assert.equal(Object.keys(bundle.stores.contactInquiries).length, 1);
+    assert.equal(Object.keys(bundle.stores.diligencePrefs).length, 1);
+
     await svc.clearAll();
     assert.equal(await svc.loadCalculatorState(), null);
+    assert.equal((await svc.listCalculatorScenarios()).length, 0);
+    assert.equal((await svc.listWorkspaceSnapshots()).length, 0);
+    assert.equal((await svc.listInvestorFeedback()).length, 0);
+    assert.equal((await svc.listContactInquiries()).length, 0);
+    assert.equal(await svc.loadDiligencePrefs(), null);
 
     await svc.importAllOfflineData(bundle);
     const restored = await svc.loadCalculatorState();
     assert.equal(restored?.investmentK, 250);
     assert.equal(restored?.projectedChartMetric, 'moic');
+    assert.equal((await svc.listCalculatorScenarios()).length, 1);
+    assert.equal((await svc.listWorkspaceSnapshots()).length, 1);
+    assert.equal((await svc.listInvestorFeedback()).length, 1);
+    assert.equal((await svc.listContactInquiries()).length, 1);
+    assert.equal((await svc.loadDiligencePrefs())?.currency, 'BDT');
+
+    await svc.deleteCalculatorScenario(savedScenario.id);
+    await svc.deleteWorkspaceSnapshot(snapshot.id);
+    await svc.deleteInvestorFeedback(feedback.id);
+    await svc.deleteContactInquiry(inquiry.id);
+    assert.equal((await svc.listCalculatorScenarios()).length, 0);
+    assert.equal((await svc.listWorkspaceSnapshots()).length, 0);
+    assert.equal((await svc.listInvestorFeedback()).length, 0);
+    assert.equal((await svc.listContactInquiries()).length, 0);
   });
 });

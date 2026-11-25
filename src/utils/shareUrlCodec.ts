@@ -25,6 +25,7 @@ export interface ParsedShareSnapshot {
 
 const TAB_TO_SLUG: Record<NavTab, string> = {
   'App Vault': 'vault',
+  'Investor Briefing': 'briefing',
   Infographics: 'infographics',
   Financials: 'financials',
   'Spenta Core': 'core',
@@ -35,6 +36,7 @@ const TAB_TO_SLUG: Record<NavTab, string> = {
 
 const SLUG_TO_TAB: Record<string, NavTab> = {
   vault: 'App Vault',
+  briefing: 'Investor Briefing',
   infographics: 'Infographics',
   financials: 'Financials',
   core: 'Spenta Core',

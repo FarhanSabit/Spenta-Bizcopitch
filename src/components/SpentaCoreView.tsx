@@ -45,6 +45,7 @@ import {
   DEFAULT_CORE_LAYER_CONFIGS,
   useStack,
 } from '../store/StackContext';
+import { FUSION_LAYER_TECH_SPECS } from '../data/unifiedSsotData';
 import { AiSafetyWorkbench } from './AiSafetyWorkbench';
 
 type CoreTab = 'architecture' | 'safety' | 'audit';
@@ -127,6 +128,7 @@ export function SpentaCoreView() {
     resetCoreLayerConfig,
     logCoreAuditEvent,
     clearCoreAuditLog,
+    openBriefingSection,
   } = useStack();
 
   const [activeCoreTab, setActiveCoreTab] = useState<CoreTab>('architecture');
@@ -675,9 +677,19 @@ export function SpentaCoreView() {
                   </div>
 
                   {/* API Contracts */}
-                  <div className="bg-[#0B1020] text-[#E7EBF5] rounded-xl border border-[#232B4A] p-3.5 overflow-x-auto">
-                    <div className="text-[10px] font-mono uppercase tracking-wider text-[#6FCB9F] mb-2">
-                      Standardized Spenta Core API Contracts ({activeLayer.id})
+                  <div className="bg-[#0B1020] text-[#E7EBF5] rounded-xl border border-[#232B4A] p-3.5 overflow-x-auto space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-[10px] font-mono uppercase tracking-wider text-[#6FCB9F]">
+                        Standardized Spenta Core API Contracts ({activeLayer.id})
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openBriefingSection('ssot-fusion-stack')}
+                        className="inline-flex items-center gap-1 text-[10px] font-mono text-[#8FA6E8] hover:text-white transition-colors cursor-pointer"
+                      >
+                        <span>Full SSOT Spec</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
                     </div>
                     <div className="space-y-1.5 font-mono text-xs">
                       {activeLayer.apiContracts.map((contract) => (
@@ -685,7 +697,28 @@ export function SpentaCoreView() {
                           $ {contract}
                         </div>
                       ))}
+                      {FUSION_LAYER_TECH_SPECS[activeLayer.id]?.endpoints.map((ep) => (
+                        <div key={ep.path} className="text-[#9BE8C2] whitespace-nowrap">
+                          [{ep.method}] {ep.path}
+                        </div>
+                      ))}
                     </div>
+                    {FUSION_LAYER_TECH_SPECS[activeLayer.id] && (
+                      <div className="pt-2 border-t border-[#232B4A] flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-mono text-[#8E96B0]">
+                        <span>
+                          Latency: {FUSION_LAYER_TECH_SPECS[activeLayer.id].specs.latency}
+                        </span>
+                        <span>·</span>
+                        <span>
+                          Throughput: {FUSION_LAYER_TECH_SPECS[activeLayer.id].specs.throughput}
+                        </span>
+                        <span>·</span>
+                        <span>
+                          Compliance:{' '}
+                          {FUSION_LAYER_TECH_SPECS[activeLayer.id].complianceMapping.join(' · ')}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

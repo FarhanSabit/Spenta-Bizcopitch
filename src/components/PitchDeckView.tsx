@@ -47,6 +47,9 @@ export function PitchDeckView() {
     stackMetrics,
     mobileGridVisible,
     toggleMobileGrid,
+    setDataRoomOpen,
+    openContactModal,
+    openBriefingSection,
   } = useStack();
   const [activeTrack, setActiveTrack] = useState<PitchDeckTrackId>('investor-master');
   const [slideIdx, setSlideIdx] = useState(0);
@@ -440,7 +443,32 @@ export function PitchDeckView() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-[#E4DFD6] dark:border-[#232B4A]">
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-[#E4DFD6] dark:border-[#232B4A]">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => openBriefingSection('ssot-safe-terms')}
+              className="inline-flex items-center gap-1.5 min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-semibold border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] text-[#16213A] dark:text-[#E7EBF5] hover:border-[#1C6E46] dark:hover:border-[#6FCB9F] transition-colors cursor-pointer"
+            >
+              <span>Investor Briefing (SSOT)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDataRoomOpen(true)}
+              className="inline-flex items-center gap-1.5 min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-semibold border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] text-[#16213A] dark:text-[#E7EBF5] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] transition-colors cursor-pointer"
+            >
+              <FileText className="w-3.5 h-3.5 text-[#1C6E46] dark:text-[#6FCB9F]" strokeWidth={1.5} />
+              <span>Data Room</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openContactModal('Seed SAFE Term Sheet Inquiry (Pitch Deck)')}
+              className="inline-flex items-center gap-1.5 min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#1F3863] text-white dark:bg-[#8FA6E8] dark:text-[#0B1020] hover:opacity-90 transition-opacity cursor-pointer"
+            >
+              <span>Request Term Sheet</span>
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
           <span className="hidden 2xl:inline-flex items-center gap-1.5 text-xs font-mono text-[#5F6576] dark:text-[#8E96B0] bg-[#FAF8F4] dark:bg-[#0F1529] border border-[#E4DFD6] dark:border-[#232B4A] px-2.5 py-1.5 rounded-lg">
             <Keyboard className="w-3.5 h-3.5" strokeWidth={1.5} /> ← / → Arrows
           </span>
@@ -529,6 +557,7 @@ export function PitchDeckView() {
             <Grid3x3 className="w-3.5 h-3.5" strokeWidth={1.65} />
             <span>{mobileGridVisible ? 'Grid On' : 'Grid Off'}</span>
           </button>
+          </div>
         </div>
       </section>
 

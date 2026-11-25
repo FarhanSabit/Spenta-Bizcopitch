@@ -138,19 +138,75 @@ function renderGroundedMarkdown(text: string) {
 }
 
 export function FinancialsView() {
-  const { theme, selectedIds, selectedApps, stackMetrics, toggleApp } = useStack();
-  const [scenario, setScenario] = useState<ScenarioMode>('conservative');
-  const [fxRate, setFxRate] = useState<number>(120);
-  const [taxRate, setTaxRate] = useState<number>(25);
-  const [exitMultiple, setExitMultiple] = useState<number>(10);
-  const [dilutionPct, setDilutionPct] = useState<number>(0);
-  const [investmentK, setInvestmentK] = useState<number>(500);
-  const [horizonYears, setHorizonYears] = useState<number>(5);
-  const [compareGrowthScenarios, setCompareGrowthScenarios] = useState<boolean>(false);
-  const [projectedChartMetric, setProjectedChartMetric] = useState<'value' | 'moic'>('value');
+  const {
+    theme,
+    selectedIds,
+    selectedApps,
+    stackMetrics,
+    toggleApp,
+    investorCalculatorState,
+    investorCalculatorHydrated,
+    updateInvestorCalculatorState,
+    currency,
+    setCurrency,
+    openBriefingSection,
+    openIntelligenceModal,
+    setDataRoomOpen,
+  } = useStack();
+  const {
+    scenario,
+    growthMode,
+    fxRate,
+    taxRate,
+    exitMultiple,
+    dilutionPct,
+    investmentK,
+    horizonYears,
+    compareGrowthScenarios,
+    projectedChartMetric,
+    subTab,
+    mixPreset,
+    mixScopeWeights: rawMixScopeWeights,
+    mixOpexRatioPct,
+  } = investorCalculatorState;
+
+  const mixScopeWeights = rawMixScopeWeights as Record<RevenueScopeId, number>;
+
+  const setScenario = (val: ScenarioMode) => updateInvestorCalculatorState({ scenario: val });
+  const setGrowthMode = (val: GrowthMode) => updateInvestorCalculatorState({ growthMode: val });
+  const setFxRate = (val: number) => updateInvestorCalculatorState({ fxRate: val });
+  const setTaxRate = (val: number) => updateInvestorCalculatorState({ taxRate: val });
+  const setExitMultiple = (val: number) => updateInvestorCalculatorState({ exitMultiple: val });
+  const setDilutionPct = (val: number) => updateInvestorCalculatorState({ dilutionPct: val });
+  const setInvestmentK = (val: number) => updateInvestorCalculatorState({ investmentK: val });
+  const setHorizonYears = (val: number) => updateInvestorCalculatorState({ horizonYears: val });
+  const setCompareGrowthScenarios = (val: boolean | ((prev: boolean) => boolean)) =>
+    updateInvestorCalculatorState((prev) => ({
+      ...prev,
+      compareGrowthScenarios:
+        typeof val === 'function' ? val(prev.compareGrowthScenarios) : val,
+    }));
+  const setProjectedChartMetric = (val: 'value' | 'moic') =>
+    updateInvestorCalculatorState({ projectedChartMetric: val });
+  const setSubTab = (val: FinancialsSubTab) => updateInvestorCalculatorState({ subTab: val });
+  const setMixPreset = (val: MixPresetId) => updateInvestorCalculatorState({ mixPreset: val });
+  const setMixScopeWeights = (
+    val:
+      | Record<RevenueScopeId, number>
+      | ((prev: Record<RevenueScopeId, number>) => Record<RevenueScopeId, number>),
+  ) =>
+    updateInvestorCalculatorState((prev) => ({
+      ...prev,
+      mixScopeWeights:
+        typeof val === 'function'
+          ? val(prev.mixScopeWeights as Record<RevenueScopeId, number>)
+          : val,
+    }));
+  const setMixOpexRatioPct = (val: number) =>
+    updateInvestorCalculatorState({ mixOpexRatioPct: val });
+
   const [sortField, setSortField] = useState<SortField>('gmPct');
   const [sortAsc, setSortAsc] = useState<boolean>(false);
-  const [subTab, setSubTab] = useState<FinancialsSubTab>('pnl');
   const [roiInitialAppId, setRoiInitialAppId] = useState<string>(SPENTA_APPS[0].id);
 
   const [summaryOpen, setSummaryOpen] = useState<boolean>(false);
@@ -181,81 +237,9 @@ export function FinancialsView() {
     activeHubLabel: REGIONAL_HUBS[2].name,
   });
 
-  // Shared 5-Scope Revenue Mix Modeler state (synced between FinancialsView PieChart and RevenueMixModeler)
-  const [growthMode, setGrowthMode] = useState<GrowthMode>('conservative');
-  const [mixPreset, setMixPreset] = useState<MixPresetId>('fy31');
-  const [mixScopeWeights, setMixScopeWeights] = useState<Record<RevenueScopeId, number>>(
-    () => DEFAULT_MIX_WEIGHTS.fy31,
-  );
-  const [mixOpexRatioPct, setMixOpexRatioPct] = useState<number>(DEFAULT_PRESET_OPEX.fy31);
   const [scopeLineMetric, setScopeLineMetric] = useState<'revenue' | 'share'>('revenue');
   const [hiddenScopeLines, setHiddenScopeLines] = useState<RevenueScopeId[]>([]);
   const [csvExported, setCsvExported] = useState<boolean>(false);
-  const [idbHydrated, setIdbHydrated] = useState<boolean>(false);
-
-  // Hydrate investor calculator & scenario settings from IndexedDB offline storage
-  useEffect(() => {
-    let active = true;
-    void localPersistenceService.loadCalculatorState().then((saved) => {
-      if (!active) return;
-      if (saved) {
-        if (saved.scenario === 'conservative' || saved.scenario === 'upside') {
-          setScenario(saved.scenario);
-        }
-        if (saved.growthMode === 'conservative' || saved.growthMode === 'aggressive') {
-          setGrowthMode(saved.growthMode);
-        }
-        if (typeof saved.fxRate === 'number' && Number.isFinite(saved.fxRate)) {
-          setFxRate(Math.max(100, Math.min(160, saved.fxRate)));
-        }
-        if (typeof saved.taxRate === 'number' && Number.isFinite(saved.taxRate)) {
-          setTaxRate(Math.max(0, Math.min(45, saved.taxRate)));
-        }
-        if (typeof saved.exitMultiple === 'number' && Number.isFinite(saved.exitMultiple)) {
-          setExitMultiple(Math.max(6, Math.min(20, saved.exitMultiple)));
-        }
-        if (typeof saved.dilutionPct === 'number' && Number.isFinite(saved.dilutionPct)) {
-          setDilutionPct(Math.max(0, Math.min(40, saved.dilutionPct)));
-        }
-        if (typeof saved.investmentK === 'number' && Number.isFinite(saved.investmentK)) {
-          setInvestmentK(Math.max(25, Math.min(500, saved.investmentK)));
-        }
-        if (typeof saved.horizonYears === 'number' && Number.isFinite(saved.horizonYears)) {
-          setHorizonYears(Math.max(1, Math.min(5, Math.round(saved.horizonYears))));
-        }
-        if (typeof saved.compareGrowthScenarios === 'boolean') {
-          setCompareGrowthScenarios(saved.compareGrowthScenarios);
-        }
-        if (saved.projectedChartMetric === 'value' || saved.projectedChartMetric === 'moic') {
-          setProjectedChartMetric(saved.projectedChartMetric);
-        }
-        if (saved.subTab === 'pnl' || saved.subTab === 'roi' || saved.subTab === 'maps') {
-          setSubTab(saved.subTab);
-        }
-        if (
-          saved.mixPreset === 'fy27' ||
-          saved.mixPreset === 'fy31' ||
-          saved.mixPreset === 'arr-heavy'
-        ) {
-          setMixPreset(saved.mixPreset);
-        }
-        if (saved.mixScopeWeights && typeof saved.mixScopeWeights === 'object') {
-          setMixScopeWeights((prev) => ({
-            ...prev,
-            ...(saved.mixScopeWeights as Partial<Record<RevenueScopeId, number>>),
-          }));
-        }
-        if (typeof saved.mixOpexRatioPct === 'number' && Number.isFinite(saved.mixOpexRatioPct)) {
-          setMixOpexRatioPct(saved.mixOpexRatioPct);
-        }
-      }
-      setIdbHydrated(true);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const activeGrowthSpec = GROWTH_MODE_SPECS[growthMode];
 
@@ -648,26 +632,10 @@ export function FinancialsView() {
   );
   const terminalRoiPoint = investorRoiSeries[investorRoiSeries.length - 1] ?? investorRoiSeries[0];
 
-  // Offline-first persistence of investor calculator state and computed chart projections to IndexedDB
+  // Persist computed chart projection series to IndexedDB whenever calculator outputs update
   useEffect(() => {
-    if (!idbHydrated) return;
+    if (!investorCalculatorHydrated) return;
     const timer = window.setTimeout(() => {
-      void localPersistenceService.saveCalculatorState({
-        scenario,
-        growthMode,
-        fxRate,
-        taxRate,
-        exitMultiple,
-        dilutionPct,
-        investmentK,
-        horizonYears,
-        compareGrowthScenarios,
-        projectedChartMetric,
-        subTab,
-        mixPreset,
-        mixScopeWeights,
-        mixOpexRatioPct,
-      });
       void localPersistenceService.saveChartProjection('investor_roi_series', investorRoiSeries, {
         scenario,
         growthMode,
@@ -688,7 +656,7 @@ export function FinancialsView() {
 
     return () => window.clearTimeout(timer);
   }, [
-    idbHydrated,
+    investorCalculatorHydrated,
     scenario,
     growthMode,
     fxRate,
@@ -699,10 +667,6 @@ export function FinancialsView() {
     horizonYears,
     compareGrowthScenarios,
     projectedChartMetric,
-    subTab,
-    mixPreset,
-    mixScopeWeights,
-    mixOpexRatioPct,
     investorRoiSeries,
     modeledSeries,
   ]);
@@ -852,6 +816,51 @@ export function FinancialsView() {
           <h1 className="text-xl sm:text-2xl font-extrabold text-[#16213A] dark:text-[#E7EBF5] tracking-tight mt-1">
             Financials — P&amp;L Trajectory, 13-Product ROI &amp; Regional Market Intelligence
           </h1>
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            <div
+              role="group"
+              aria-label="Unified SSOT Currency"
+              className="inline-flex rounded-lg bg-[#F2EFE9] dark:bg-[#0F1529] p-0.5 border border-[#E4DFD6] dark:border-[#232B4A]"
+            >
+              {(['USD', 'BDT'] as const).map((curr) => (
+                <button
+                  key={curr}
+                  type="button"
+                  onClick={() => setCurrency(curr)}
+                  className={`px-2 py-1 rounded-md text-[11px] font-mono font-semibold transition-colors cursor-pointer ${
+                    currency === curr
+                      ? 'bg-[#1F3863] text-white dark:bg-[#8FA6E8] dark:text-[#0B1020]'
+                      : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+                  }`}
+                >
+                  {curr}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => openBriefingSection('ssot-unit-economics')}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] text-[#16213A] dark:text-[#E7EBF5] hover:border-[#1C6E46] dark:hover:border-[#6FCB9F] transition-colors cursor-pointer"
+            >
+              <span>9-Tier Unit Economics</span>
+              <ArrowRight className="w-3 h-3 text-[#1C6E46] dark:text-[#6FCB9F]" />
+            </button>
+            <button
+              type="button"
+              onClick={() => openIntelligenceModal('ssot-unit-economics')}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] text-[#16213A] dark:text-[#E7EBF5] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] transition-colors cursor-pointer"
+            >
+              <span>Investor Intelligence (D3)</span>
+              <ArrowRight className="w-3 h-3 text-[#1F3863] dark:text-[#8FA6E8]" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setDataRoomOpen(true)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] text-[#16213A] dark:text-[#E7EBF5] hover:border-[#1C6E46] dark:hover:border-[#6FCB9F] transition-colors cursor-pointer"
+            >
+              <span>Data Room</span>
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 self-start xl:self-auto">

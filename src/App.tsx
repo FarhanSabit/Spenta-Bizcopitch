@@ -12,9 +12,13 @@ import { ResilientErrorBoundary } from './components/ResilientErrorBoundary';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 import {
   aiAssistantImporter,
+  dataRoomImporter,
+  founderContactImporter,
   getTabPreloadHandlers,
+  investorIntelligenceImporter,
   markStackComposerLoaded,
   markTabViewLoaded,
+  spatialArImporter,
   stackComposerImporter,
   viewImporters,
 } from './utils/viewPreloaders';
@@ -22,6 +26,7 @@ import {
 const StackComposerDrawer = lazyWithRetry(stackComposerImporter);
 
 const SpentaBrainVault = lazyWithRetry(viewImporters['App Vault']);
+const InvestorBriefingView = lazyWithRetry(viewImporters['Investor Briefing']);
 const InfographicsView = lazyWithRetry(viewImporters.Infographics);
 const FinancialsView = lazyWithRetry(viewImporters.Financials);
 const SpentaCoreView = lazyWithRetry(viewImporters['Spenta Core']);
@@ -29,6 +34,10 @@ const TheBrainView = lazyWithRetry(viewImporters['The Brain']);
 const PitchDeckView = lazyWithRetry(viewImporters['Pitch Deck']);
 const ResourcesView = lazyWithRetry(viewImporters.Resources);
 const SpentaAiAssistant = lazyWithRetry(aiAssistantImporter);
+const DataRoomModal = lazyWithRetry(dataRoomImporter);
+const FounderContactModal = lazyWithRetry(founderContactImporter);
+const InvestorIntelligenceModal = lazyWithRetry(investorIntelligenceImporter);
+const SpatialArViewerModal = lazyWithRetry(spatialArImporter);
 
 function ViewLoadingFallback() {
   return (
@@ -82,6 +91,10 @@ function PortalShell() {
     sharedSnapshotSummary,
     dismissSharedSnapshot,
     resetToLocalDefaults,
+    dataRoomOpen,
+    contactModalOpen,
+    intelligenceModalOpen,
+    arPreviewTarget,
   } = useStack();
   const { theme } = useTheme();
   const [hasOpenedDrawer, setHasOpenedDrawer] = useState(drawerOpen);
@@ -269,6 +282,7 @@ function PortalShell() {
           <SpentaThemeView viewId={activeTab}>
             <Suspense fallback={<ViewLoadingFallback />}>
               {activeTab === 'App Vault' && <SpentaBrainVault />}
+              {activeTab === 'Investor Briefing' && <InvestorBriefingView />}
               {activeTab === 'Infographics' && <InfographicsView />}
               {activeTab === 'Financials' && <FinancialsView />}
               {activeTab === 'Spenta Core' && <SpentaCoreView />}
@@ -317,6 +331,26 @@ function PortalShell() {
       {(hasOpenedDrawer || drawerOpen) && (
         <Suspense fallback={null}>
           <StackComposerDrawer />
+        </Suspense>
+      )}
+      {dataRoomOpen && (
+        <Suspense fallback={null}>
+          <DataRoomModal />
+        </Suspense>
+      )}
+      {contactModalOpen && (
+        <Suspense fallback={null}>
+          <FounderContactModal />
+        </Suspense>
+      )}
+      {intelligenceModalOpen && (
+        <Suspense fallback={null}>
+          <InvestorIntelligenceModal />
+        </Suspense>
+      )}
+      {arPreviewTarget && (
+        <Suspense fallback={null}>
+          <SpatialArViewerModal />
         </Suspense>
       )}
       <MobileGridToggle />

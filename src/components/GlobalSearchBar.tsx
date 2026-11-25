@@ -30,6 +30,12 @@ import {
   SPENTA_APPS,
   STARTER_RECIPES,
 } from '../data/spentaManifest';
+import {
+  BRIEFING_CHAPTERS,
+  DATA_ROOM_DOCUMENTS,
+  NINE_TIER_UNIT_ECONOMICS,
+  formatSsotCurrency,
+} from '../data/unifiedSsotData';
 import { PendingNavFocus, useStack } from '../store/StackContext';
 import { preloadTabView } from '../utils/viewPreloaders';
 
@@ -37,6 +43,9 @@ interface SearchEntry {
   id: string;
   kind:
     | 'Section'
+    | 'Briefing'
+    | 'Data Room'
+    | 'Unit Economics'
     | 'Recipe'
     | 'App'
     | 'Infographic'
@@ -213,6 +222,12 @@ export function GlobalSearchBar() {
     toggleApp,
     applyRecipe,
     setAiAssistantOpen,
+    currency,
+    investorCalculatorState,
+    setDataRoomOpen,
+    openIntelligenceModal,
+    openContactModal,
+    openBriefingSection,
   } = useStack();
 
   const [query, setQuery] = useState('');
@@ -310,9 +325,11 @@ export function GlobalSearchBar() {
       });
     });
 
-    // 7 Portal Sections
+    // 8 Portal Sections
     const sectionDescs: Record<NavTab, string> = {
       'App Vault': 'Composable 13-app catalog, Architecture Matrix & 3D Neural Core',
+      'Investor Briefing':
+        'Master SSOT briefing, 9-Tier Unit Economics, Dual-Shore 3D Globe & Seed SAFE Terms',
       Infographics: '4 high-resolution 16:9 presentation plates & full-screen lightbox',
       Financials: 'FY2027–FY2031 P&L, Quick Generate Brief, FX/Tax & 13-Product GM Table',
       'Spenta Core': 'L1–L6 Fusion Stack, 4-Tier Server Matrix & Configuration Audit Log',
@@ -322,6 +339,8 @@ export function GlobalSearchBar() {
     };
     const extraSectionKeywords: Partial<Record<NavTab, string>> = {
       'App Vault': 'spatial xr portfolio catalog 13 modules showreel',
+      'Investor Briefing':
+        'master ssot invespitchment unit economics 9 tier dual shore globe safe terms data room d3 voice',
       Financials: 'fy2027 projections forecast safe round terms valuation cap roi',
       'Spenta Core': 'ai safety protocols governance tee opa',
       'The Brain': 'ai safety protocols hitl gate guardrails governance',
@@ -339,14 +358,82 @@ export function GlobalSearchBar() {
       });
     });
 
-    // Quick Theme Toggle Action
-    items.push({
-      id: 'action-theme',
-      kind: 'Action',
-      title: theme === 'dark' ? 'Switch to Stone Light Mode' : 'Switch to Nocturnal Navy Mode',
-      subtitle: 'Toggle Spenta Stone Light and Nocturnal Navy color tokens across all views',
-      keywords: 'theme dark light mode stone nocturnal navy appearance toggle',
-      onRun: () => toggleTheme(),
+    // Quick Actions (Theme + Investor Briefing Modals)
+    items.push(
+      {
+        id: 'action-data-room',
+        kind: 'Action',
+        title: 'Open Investor Data Room',
+        subtitle: 'Searchable diligence index, bookmarked memos & cross-tab deep links',
+        keywords: 'data room diligence memo documents safe financials bookmarks',
+        onRun: () => setDataRoomOpen(true),
+      },
+      {
+        id: 'action-intelligence-d3',
+        kind: 'Action',
+        title: 'Open Investor Intelligence (D3 Analytics)',
+        subtitle: 'Live D3 sentiment trend curve, chapter feedback heatmap & SAFE ROI sync',
+        keywords: 'd3 analytics sentiment heatmap intelligence feedback investor dashboard',
+        onRun: () => openIntelligenceModal(),
+      },
+      {
+        id: 'action-founder-contact',
+        kind: 'Action',
+        title: 'Request Term Sheet / Founder Contact',
+        subtitle: 'Offline-first diligence inquiry for Seed SAFE ($500K @ $4.5M Cap)',
+        keywords: 'term sheet contact founder safe inquiry seed round email',
+        onRun: () => openContactModal('Seed SAFE Term Sheet & Data Room Request'),
+      },
+      {
+        id: 'action-theme',
+        kind: 'Action',
+        title: theme === 'dark' ? 'Switch to Stone Light Mode' : 'Switch to Nocturnal Navy Mode',
+        subtitle: 'Toggle Spenta Stone Light and Nocturnal Navy color tokens across all views',
+        keywords: 'theme dark light mode stone nocturnal navy appearance toggle',
+        onRun: () => toggleTheme(),
+      },
+    );
+
+    // Master SSOT Briefing Chapters
+    BRIEFING_CHAPTERS.forEach((chapter) => {
+      items.push({
+        id: `briefing-${chapter.id}`,
+        kind: 'Briefing',
+        title: `SSOT ${chapter.title}`,
+        subtitle: `Investor Briefing · Tracks: ${chapter.recommendedFor.join(', ')}`,
+        keywords: `investor briefing master ssot ${chapter.shortTitle} ${chapter.title} ${chapter.recommendedFor.join(' ')}`,
+        onRun: () => openBriefingSection(chapter.id),
+      });
+    });
+
+    // 9-Tier Unit Economics
+    NINE_TIER_UNIT_ECONOMICS.forEach((tier) => {
+      const baselineLabel = formatSsotCurrency(
+        tier.baselineUsd,
+        currency,
+        investorCalculatorState.fxRate,
+        { compact: true },
+      );
+      items.push({
+        id: `ue-${tier.id}`,
+        kind: 'Unit Economics',
+        title: `${tier.code}: ${tier.name}`,
+        subtitle: `${baselineLabel} baseline · ${tier.grossMarginPercent.toFixed(1)}% GM · ${tier.deliveryTimeline}`,
+        keywords: `unit economics tier ${tier.code} ${tier.name} ${tier.categoryLabel} ${tier.scopeSummary}`,
+        onRun: () => openBriefingSection('ssot-unit-economics'),
+      });
+    });
+
+    // Data Room Documents
+    DATA_ROOM_DOCUMENTS.forEach((doc) => {
+      items.push({
+        id: `dr-${doc.id}`,
+        kind: 'Data Room',
+        title: `${doc.code}: ${doc.title}`,
+        subtitle: `${doc.category} · ${doc.format}`,
+        keywords: `data room ${doc.code} ${doc.title} ${doc.category} ${doc.keywords}`,
+        onRun: () => setDataRoomOpen(true),
+      });
     });
 
     // 13 Composable Apps
@@ -506,7 +593,16 @@ export function GlobalSearchBar() {
     );
 
     return items;
-  }, [theme, toggleTheme]);
+  }, [
+    theme,
+    toggleTheme,
+    currency,
+    investorCalculatorState.fxRate,
+    setDataRoomOpen,
+    openIntelligenceModal,
+    openContactModal,
+    openBriefingSection,
+  ]);
 
   const searchTokens = useMemo(() => {
     const q = query.trim();

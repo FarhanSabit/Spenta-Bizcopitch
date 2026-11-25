@@ -29,7 +29,109 @@ import {
   PathwayBrainLinkTarget,
   resolveBrainHubForPathwayNode,
 } from '../utils/pathwayBrainLink';
-import { localPersistenceService } from '../utils/LocalPersistenceService';
+import {
+  InvestorCalculatorScenario,
+  InvestorFeedbackPriority,
+  InvestorFeedbackRecord,
+  localPersistenceService,
+  OfflineContactInquiry,
+  PersistedInvestorCalculatorState,
+  UserWorkspaceSnapshot,
+} from '../utils/LocalPersistenceService';
+import {
+  ArPreviewTarget,
+  DEFAULT_SSOT_FX_RATE,
+  InvestorPersonaTrack,
+  SsotCurrency,
+} from '../data/unifiedSsotData';
+
+export type InvestorCalculatorState = Omit<PersistedInvestorCalculatorState, 'updatedAt'>;
+
+export const DEFAULT_INVESTOR_CALCULATOR_STATE: InvestorCalculatorState = {
+  scenario: 'conservative',
+  growthMode: 'conservative',
+  fxRate: DEFAULT_SSOT_FX_RATE,
+  taxRate: 25,
+  exitMultiple: 10,
+  dilutionPct: 0,
+  investmentK: 500,
+  horizonYears: 5,
+  compareGrowthScenarios: false,
+  projectedChartMetric: 'value',
+  subTab: 'pnl',
+  mixPreset: 'fy31',
+  mixScopeWeights: {
+    one_time_builds: 24,
+    recurring_saas: 44,
+    managed_retainers: 14,
+    ip_royalties: 12,
+    captive_ecosystem: 6,
+  },
+  mixOpexRatioPct: 24,
+};
+
+function sanitizeInvestorCalculatorState(
+  raw: Partial<InvestorCalculatorState> | null | undefined,
+): InvestorCalculatorState {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      ...DEFAULT_INVESTOR_CALCULATOR_STATE,
+      mixScopeWeights: { ...DEFAULT_INVESTOR_CALCULATOR_STATE.mixScopeWeights },
+    };
+  }
+  return {
+    scenario: raw.scenario === 'upside' ? 'upside' : 'conservative',
+    growthMode: raw.growthMode === 'aggressive' ? 'aggressive' : 'conservative',
+    fxRate:
+      typeof raw.fxRate === 'number' && Number.isFinite(raw.fxRate)
+        ? Math.max(100, Math.min(160, raw.fxRate))
+        : DEFAULT_INVESTOR_CALCULATOR_STATE.fxRate,
+    taxRate:
+      typeof raw.taxRate === 'number' && Number.isFinite(raw.taxRate)
+        ? Math.max(0, Math.min(45, raw.taxRate))
+        : DEFAULT_INVESTOR_CALCULATOR_STATE.taxRate,
+    exitMultiple:
+      typeof raw.exitMultiple === 'number' && Number.isFinite(raw.exitMultiple)
+        ? Math.max(6, Math.min(20, raw.exitMultiple))
+        : DEFAULT_INVESTOR_CALCULATOR_STATE.exitMultiple,
+    dilutionPct:
+      typeof raw.dilutionPct === 'number' && Number.isFinite(raw.dilutionPct)
+        ? Math.max(0, Math.min(40, raw.dilutionPct))
+        : DEFAULT_INVESTOR_CALCULATOR_STATE.dilutionPct,
+    investmentK:
+      typeof raw.investmentK === 'number' && Number.isFinite(raw.investmentK)
+        ? Math.max(25, Math.min(500, raw.investmentK))
+        : DEFAULT_INVESTOR_CALCULATOR_STATE.investmentK,
+    horizonYears:
+      typeof raw.horizonYears === 'number' && Number.isFinite(raw.horizonYears)
+        ? Math.max(1, Math.min(5, Math.round(raw.horizonYears)))
+        : DEFAULT_INVESTOR_CALCULATOR_STATE.horizonYears,
+    compareGrowthScenarios:
+      typeof raw.compareGrowthScenarios === 'boolean'
+        ? raw.compareGrowthScenarios
+        : DEFAULT_INVESTOR_CALCULATOR_STATE.compareGrowthScenarios,
+    projectedChartMetric: raw.projectedChartMetric === 'moic' ? 'moic' : 'value',
+    subTab:
+      raw.subTab === 'roi' || raw.subTab === 'maps' || raw.subTab === 'pnl'
+        ? raw.subTab
+        : DEFAULT_INVESTOR_CALCULATOR_STATE.subTab,
+    mixPreset:
+      raw.mixPreset === 'fy27' || raw.mixPreset === 'fy31' || raw.mixPreset === 'arr-heavy'
+        ? raw.mixPreset
+        : DEFAULT_INVESTOR_CALCULATOR_STATE.mixPreset,
+    mixScopeWeights:
+      raw.mixScopeWeights && typeof raw.mixScopeWeights === 'object'
+        ? {
+            ...DEFAULT_INVESTOR_CALCULATOR_STATE.mixScopeWeights,
+            ...raw.mixScopeWeights,
+          }
+        : { ...DEFAULT_INVESTOR_CALCULATOR_STATE.mixScopeWeights },
+    mixOpexRatioPct:
+      typeof raw.mixOpexRatioPct === 'number' && Number.isFinite(raw.mixOpexRatioPct)
+        ? raw.mixOpexRatioPct
+        : DEFAULT_INVESTOR_CALCULATOR_STATE.mixOpexRatioPct,
+  };
+}
 
 const STACK_STORAGE_KEY = 'spenta_sovereign_stack_v1';
 const PROPOSALS_STORAGE_KEY = 'spenta_saved_proposals_v1';
@@ -263,7 +365,8 @@ export interface PendingNavFocus {
     | 'blueprint'
     | 'studio'
     | 'showreel'
-    | 'brain-hub';
+    | 'brain-hub'
+    | 'briefing-section';
   id: string;
   appId?: string;
   open3D?: boolean;
@@ -428,6 +531,63 @@ interface StackContextValue {
   solarFollowPlanet: boolean;
   setSolarFollowPlanet: (enabled: boolean) => void;
   resetNeuralCoreState: () => void;
+  investorCalculatorState: InvestorCalculatorState;
+  investorCalculatorHydrated: boolean;
+  updateInvestorCalculatorState: (
+    patch:
+      | Partial<InvestorCalculatorState>
+      | ((prev: InvestorCalculatorState) => InvestorCalculatorState),
+  ) => void;
+  resetInvestorCalculatorState: () => void;
+  savedCalculatorScenarios: InvestorCalculatorScenario[];
+  saveCalculatorScenario: (name: string, description?: string) => Promise<InvestorCalculatorScenario>;
+  applyCalculatorScenario: (id: string) => void;
+  deleteCalculatorScenario: (id: string) => Promise<void>;
+  workspaceSnapshots: UserWorkspaceSnapshot[];
+  saveWorkspaceSnapshot: (name: string) => Promise<UserWorkspaceSnapshot>;
+  restoreWorkspaceSnapshot: (id: string) => void;
+  deleteWorkspaceSnapshot: (id: string) => Promise<void>;
+  // Unified SSOT & Investor Briefing engagement state
+  currency: SsotCurrency;
+  setCurrency: (currency: SsotCurrency) => void;
+  personaTrack: InvestorPersonaTrack;
+  setPersonaTrack: (track: InvestorPersonaTrack) => void;
+  bookmarkedDocIds: string[];
+  toggleDocBookmark: (docId: string) => void;
+  investorFeedback: InvestorFeedbackRecord[];
+  addInvestorFeedback: (input: {
+    section: string;
+    priority: InvestorFeedbackPriority;
+    sentimentScore: number;
+    text: string;
+  }) => Promise<InvestorFeedbackRecord>;
+  replyInvestorFeedback: (feedbackId: string, replyText: string) => Promise<void>;
+  deleteInvestorFeedback: (id: string) => Promise<void>;
+  contactInquiries: OfflineContactInquiry[];
+  submitContactInquiry: (input: {
+    name: string;
+    organization: string;
+    email: string;
+    topic: string;
+    checkSize: string;
+    message: string;
+  }) => Promise<OfflineContactInquiry>;
+  deleteContactInquiry: (id: string) => Promise<void>;
+  dataRoomOpen: boolean;
+  setDataRoomOpen: (open: boolean) => void;
+  contactModalOpen: boolean;
+  contactModalTopic: string;
+  openContactModal: (topic?: string) => void;
+  closeContactModal: () => void;
+  intelligenceModalOpen: boolean;
+  intelligenceFocusSection: string;
+  openIntelligenceModal: (section?: string) => void;
+  closeIntelligenceModal: () => void;
+  arPreviewTarget: ArPreviewTarget | null;
+  openArPreview: (target: ArPreviewTarget) => void;
+  closeArPreview: () => void;
+  loadCaseStudyStack: (appIds: string[], label: string) => void;
+  openBriefingSection: (sectionId: string) => void;
 }
 
 const StackContext = createContext<StackContextValue | null>(null);
@@ -859,7 +1019,232 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     }
   }, [neuralCoreState]);
 
-  // Hydrate session fallback from IndexedDB if localStorage was cleared or unavailable
+  const [investorCalculatorState, setInvestorCalculatorState] = useState<InvestorCalculatorState>(
+    () => ({
+      ...DEFAULT_INVESTOR_CALCULATOR_STATE,
+      mixScopeWeights: { ...DEFAULT_INVESTOR_CALCULATOR_STATE.mixScopeWeights },
+    }),
+  );
+  const [investorCalculatorHydrated, setInvestorCalculatorHydrated] = useState<boolean>(false);
+  const [savedCalculatorScenarios, setSavedCalculatorScenarios] = useState<
+    InvestorCalculatorScenario[]
+  >([]);
+  const [workspaceSnapshots, setWorkspaceSnapshots] = useState<UserWorkspaceSnapshot[]>([]);
+  const [currency, setCurrency] = useState<SsotCurrency>('USD');
+  const [personaTrack, setPersonaTrack] = useState<InvestorPersonaTrack>('financial');
+  const [bookmarkedDocIds, setBookmarkedDocIds] = useState<string[]>([]);
+  const [investorFeedback, setInvestorFeedback] = useState<InvestorFeedbackRecord[]>([]);
+  const [contactInquiries, setContactInquiries] = useState<OfflineContactInquiry[]>([]);
+  const [dataRoomOpen, setDataRoomOpen] = useState<boolean>(false);
+  const [contactModalOpen, setContactModalOpen] = useState<boolean>(false);
+  const [contactModalTopic, setContactModalTopic] = useState<string>('Seed Round SAFE Terms ($500K @ $4.5M Cap)');
+  const [intelligenceModalOpen, setIntelligenceModalOpen] = useState<boolean>(false);
+  const [intelligenceFocusSection, setIntelligenceFocusSection] = useState<string>(
+    '01. Dual-Engine Commercialization & Value Exchange',
+  );
+  const [arPreviewTarget, setArPreviewTarget] = useState<ArPreviewTarget | null>(null);
+
+  const openContactModal = useCallback((topic?: string) => {
+    if (topic) setContactModalTopic(topic);
+    setContactModalOpen(true);
+  }, []);
+
+  const closeContactModal = useCallback(() => {
+    setContactModalOpen(false);
+  }, []);
+
+  const openIntelligenceModal = useCallback((section?: string) => {
+    if (section) setIntelligenceFocusSection(section);
+    setIntelligenceModalOpen(true);
+  }, []);
+
+  const closeIntelligenceModal = useCallback(() => {
+    setIntelligenceModalOpen(false);
+  }, []);
+
+  const openArPreview = useCallback((target: ArPreviewTarget) => {
+    setArPreviewTarget(target);
+  }, []);
+
+  const closeArPreview = useCallback(() => {
+    setArPreviewTarget(null);
+  }, []);
+
+  const toggleDocBookmark = useCallback((docId: string) => {
+    setBookmarkedDocIds((prev) =>
+      prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId],
+    );
+  }, []);
+
+  const addInvestorFeedback = useCallback<StackContextValue['addInvestorFeedback']>(
+    async (input) => {
+      const saved = await localPersistenceService.saveInvestorFeedback(input);
+      setInvestorFeedback((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]);
+      return saved;
+    },
+    [],
+  );
+
+  const replyInvestorFeedback = useCallback(async (feedbackId: string, replyText: string) => {
+    const updated = await localPersistenceService.addFeedbackReply(feedbackId, replyText);
+    if (!updated) return;
+    setInvestorFeedback((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+  }, []);
+
+  const deleteInvestorFeedback = useCallback(async (id: string) => {
+    await localPersistenceService.deleteInvestorFeedback(id);
+    setInvestorFeedback((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const submitContactInquiry = useCallback<StackContextValue['submitContactInquiry']>(
+    async (input) => {
+      const saved = await localPersistenceService.saveContactInquiry(input);
+      setContactInquiries((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]);
+      setAutoNotice(`Saved founder inquiry draft for "${saved.topic}" offline to IndexedDB`);
+      return saved;
+    },
+    [],
+  );
+
+  const deleteContactInquiry = useCallback(async (id: string) => {
+    await localPersistenceService.deleteContactInquiry(id);
+    setContactInquiries((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const loadCaseStudyStack = useCallback(
+    (appIds: string[], label: string) => {
+      const validSet = new Set(SPENTA_APPS.map((a) => a.id));
+      const matched = appIds.filter((id) => validSet.has(id));
+      if (matched.length === 0) return;
+      // Include required dependencies so the composed stack is immediately coherent
+      const expanded = new Set<string>(matched);
+      matched.forEach((id) => {
+        const app = SPENTA_APPS.find((a) => a.id === id);
+        app?.depends.forEach((dep) => {
+          if (validSet.has(dep)) expanded.add(dep);
+        });
+      });
+      setSelectedIds(Array.from(expanded));
+      setDrawerOpen(true);
+      setAutoNotice(`Loaded ${label} stack (${expanded.size} modules) into Stack Composer`);
+    },
+    [],
+  );
+
+  const openBriefingSection = useCallback(
+    (sectionId: string) => {
+      navigateToItem('Investor Briefing', {
+        type: 'briefing-section',
+        id: sectionId,
+      });
+    },
+    [navigateToItem],
+  );
+
+  const updateInvestorCalculatorState = useCallback<
+    StackContextValue['updateInvestorCalculatorState']
+  >((patch) => {
+    setInvestorCalculatorState((prev) => {
+      const next =
+        typeof patch === 'function'
+          ? patch(prev)
+          : {
+              ...prev,
+              ...patch,
+              mixScopeWeights: patch.mixScopeWeights
+                ? { ...prev.mixScopeWeights, ...patch.mixScopeWeights }
+                : prev.mixScopeWeights,
+            };
+      return sanitizeInvestorCalculatorState(next);
+    });
+  }, []);
+
+  const resetInvestorCalculatorState = useCallback(() => {
+    setInvestorCalculatorState({
+      ...DEFAULT_INVESTOR_CALCULATOR_STATE,
+      mixScopeWeights: { ...DEFAULT_INVESTOR_CALCULATOR_STATE.mixScopeWeights },
+    });
+  }, []);
+
+  const saveCalculatorScenario = useCallback<StackContextValue['saveCalculatorScenario']>(
+    async (name, description) => {
+      const saved = await localPersistenceService.saveCalculatorScenario({
+        name,
+        description,
+        state: investorCalculatorState,
+      });
+      setSavedCalculatorScenarios((prev) => [
+        saved,
+        ...prev.filter((item) => item.id !== saved.id),
+      ]);
+      return saved;
+    },
+    [investorCalculatorState],
+  );
+
+  const applyCalculatorScenario = useCallback(
+    (id: string) => {
+      const match = savedCalculatorScenarios.find((s) => s.id === id);
+      if (!match) return;
+      setInvestorCalculatorState(sanitizeInvestorCalculatorState(match.state));
+      setAutoNotice(`Loaded saved scenario "${match.name}" from offline IndexedDB storage`);
+    },
+    [savedCalculatorScenarios],
+  );
+
+  const deleteCalculatorScenario = useCallback(async (id: string) => {
+    await localPersistenceService.deleteCalculatorScenario(id);
+    setSavedCalculatorScenarios((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const saveWorkspaceSnapshot = useCallback<StackContextValue['saveWorkspaceSnapshot']>(
+    async (name) => {
+      const saved = await localPersistenceService.saveWorkspaceSnapshot({
+        name,
+        activeTab,
+        selectedIds,
+        deploymentTarget,
+        hitlConfidence,
+        calculatorState: investorCalculatorState,
+      });
+      setWorkspaceSnapshots((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]);
+      setAutoNotice(`Saved offline workspace snapshot "${saved.name}" to IndexedDB`);
+      return saved;
+    },
+    [activeTab, selectedIds, deploymentTarget, hitlConfidence, investorCalculatorState],
+  );
+
+  const restoreWorkspaceSnapshot = useCallback(
+    (id: string) => {
+      const match = workspaceSnapshots.find((s) => s.id === id);
+      if (!match) return;
+      if (NAV_TABS.includes(match.activeTab as NavTab)) {
+        setActiveTab(match.activeTab as NavTab);
+      }
+      if (Array.isArray(match.selectedIds) && match.selectedIds.length > 0) {
+        const validIds = match.selectedIds.filter((appId) => SPENTA_APPS.some((a) => a.id === appId));
+        if (validIds.length > 0) setSelectedIds(validIds);
+      }
+      if (match.deploymentTarget in DEPLOYMENT_PROFILES) {
+        setDeploymentTargetState(match.deploymentTarget as DeploymentTargetId);
+      }
+      if (typeof match.hitlConfidence === 'number' && Number.isFinite(match.hitlConfidence)) {
+        setHitlConfidence(match.hitlConfidence);
+      }
+      if (match.calculatorState) {
+        setInvestorCalculatorState(sanitizeInvestorCalculatorState(match.calculatorState));
+      }
+      setAutoNotice(`Restored offline workspace snapshot "${match.name}" from IndexedDB`);
+    },
+    [workspaceSnapshots],
+  );
+
+  const deleteWorkspaceSnapshot = useCallback(async (id: string) => {
+    await localPersistenceService.deleteWorkspaceSnapshot(id);
+    setWorkspaceSnapshots((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  // Hydrate investor calculator state, saved scenarios, workspace snapshots, diligence preferences, feedback, inquiries, and session fallback from IndexedDB
   useEffect(() => {
     let active = true;
     const hasStoredTab = (() => {
@@ -877,19 +1262,60 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
       }
     })();
 
-    if (hasStoredTab && hasStoredStack) return;
-
-    void localPersistenceService.loadUserSession().then((session) => {
-      if (!active || !session) return;
-      if (!hasStoredTab && NAV_TABS.includes(session.activeTab as NavTab)) {
-        setActiveTab(session.activeTab as NavTab);
+    void Promise.all([
+      localPersistenceService.loadCalculatorState(),
+      localPersistenceService.listCalculatorScenarios(),
+      localPersistenceService.listWorkspaceSnapshots(),
+      hasStoredTab && hasStoredStack
+        ? Promise.resolve(null)
+        : localPersistenceService.loadUserSession(),
+      localPersistenceService.loadDiligencePrefs(),
+      localPersistenceService.listInvestorFeedback(),
+      localPersistenceService.listContactInquiries(),
+    ]).then(([savedCalc, scenarios, snapshots, session, diligencePrefs, feedbackList, inquiryList]) => {
+      if (!active) return;
+      if (savedCalc) {
+        setInvestorCalculatorState(sanitizeInvestorCalculatorState(savedCalc));
       }
-      if (!hasStoredStack && Array.isArray(session.selectedIds) && session.selectedIds.length > 0) {
-        const validIds = session.selectedIds.filter((id) => SPENTA_APPS.some((a) => a.id === id));
-        if (validIds.length > 0) {
-          setSelectedIds(validIds);
+      if (Array.isArray(scenarios)) {
+        setSavedCalculatorScenarios(scenarios);
+      }
+      if (Array.isArray(snapshots)) {
+        setWorkspaceSnapshots(snapshots);
+      }
+      if (diligencePrefs) {
+        if (diligencePrefs.currency === 'USD' || diligencePrefs.currency === 'BDT') {
+          setCurrency(diligencePrefs.currency);
+        }
+        if (
+          diligencePrefs.personaTrack === 'financial' ||
+          diligencePrefs.personaTrack === 'technical' ||
+          diligencePrefs.personaTrack === 'strategic'
+        ) {
+          setPersonaTrack(diligencePrefs.personaTrack);
+        }
+        if (Array.isArray(diligencePrefs.bookmarkedDocIds)) {
+          setBookmarkedDocIds(diligencePrefs.bookmarkedDocIds);
         }
       }
+      if (Array.isArray(feedbackList)) {
+        setInvestorFeedback(feedbackList);
+      }
+      if (Array.isArray(inquiryList)) {
+        setContactInquiries(inquiryList);
+      }
+      if (session) {
+        if (!hasStoredTab && NAV_TABS.includes(session.activeTab as NavTab)) {
+          setActiveTab(session.activeTab as NavTab);
+        }
+        if (!hasStoredStack && Array.isArray(session.selectedIds) && session.selectedIds.length > 0) {
+          const validIds = session.selectedIds.filter((id) => SPENTA_APPS.some((a) => a.id === id));
+          if (validIds.length > 0) {
+            setSelectedIds(validIds);
+          }
+        }
+      }
+      setInvestorCalculatorHydrated(true);
     });
 
     return () => {
@@ -897,8 +1323,31 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Offline-first IndexedDB snapshot of active user session metadata
+  // Automatically persist investor calculator state to IndexedDB on every change
   useEffect(() => {
+    if (!investorCalculatorHydrated) return;
+    const timer = window.setTimeout(() => {
+      void localPersistenceService.saveCalculatorState(investorCalculatorState);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [investorCalculatorHydrated, investorCalculatorState]);
+
+  // Automatically persist diligence preferences (currency, persona track, Data Room bookmarks) to IndexedDB
+  useEffect(() => {
+    if (!investorCalculatorHydrated) return;
+    const timer = window.setTimeout(() => {
+      void localPersistenceService.saveDiligencePrefs({
+        personaTrack,
+        currency,
+        bookmarkedDocIds,
+      });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [investorCalculatorHydrated, personaTrack, currency, bookmarkedDocIds]);
+
+  // Automatically persist active tab and user session metadata to IndexedDB on every change
+  useEffect(() => {
+    if (!investorCalculatorHydrated) return;
     const timer = window.setTimeout(() => {
       void localPersistenceService.saveUserSession({
         activeTab,
@@ -907,9 +1356,10 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
         savedProposalsCount: savedProposals.length,
         neuralCoreSystem: neuralCoreState.activeSystem,
       });
-    }, 200);
+    }, 150);
     return () => window.clearTimeout(timer);
   }, [
+    investorCalculatorHydrated,
     activeTab,
     selectedIds,
     deploymentTarget,
@@ -1543,6 +1993,7 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     setSharedSnapshotSummary(null);
     clearShareUrlParams();
     setNeuralCoreState(DEFAULT_NEURAL_CORE_STATE);
+    resetInvestorCalculatorState();
     setAutoNotice('Restored default Spenta Sovereign OS baseline configuration');
   };
 
@@ -1672,6 +2123,46 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
         solarFollowPlanet: neuralCoreState.solarFollowPlanet,
         setSolarFollowPlanet,
         resetNeuralCoreState,
+        investorCalculatorState,
+        investorCalculatorHydrated,
+        updateInvestorCalculatorState,
+        resetInvestorCalculatorState,
+        savedCalculatorScenarios,
+        saveCalculatorScenario,
+        applyCalculatorScenario,
+        deleteCalculatorScenario,
+        workspaceSnapshots,
+        saveWorkspaceSnapshot,
+        restoreWorkspaceSnapshot,
+        deleteWorkspaceSnapshot,
+        currency,
+        setCurrency,
+        personaTrack,
+        setPersonaTrack,
+        bookmarkedDocIds,
+        toggleDocBookmark,
+        investorFeedback,
+        addInvestorFeedback,
+        replyInvestorFeedback,
+        deleteInvestorFeedback,
+        contactInquiries,
+        submitContactInquiry,
+        deleteContactInquiry,
+        dataRoomOpen,
+        setDataRoomOpen,
+        contactModalOpen,
+        contactModalTopic,
+        openContactModal,
+        closeContactModal,
+        intelligenceModalOpen,
+        intelligenceFocusSection,
+        openIntelligenceModal,
+        closeIntelligenceModal,
+        arPreviewTarget,
+        openArPreview,
+        closeArPreview,
+        loadCaseStudyStack,
+        openBriefingSection,
       }}
     >
       {children}

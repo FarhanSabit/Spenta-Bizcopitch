@@ -8,6 +8,7 @@ export const SPENTA_CONTACT_EMAIL = 'hello@spenta.tech';
 
 export type NavTab =
   | 'App Vault'
+  | 'Investor Briefing'
   | 'Infographics'
   | 'Financials'
   | 'Spenta Core'
@@ -17,6 +18,7 @@ export type NavTab =
 
 export const NAV_TABS: NavTab[] = [
   'App Vault',
+  'Investor Briefing',
   'Infographics',
   'Financials',
   'Spenta Core',
