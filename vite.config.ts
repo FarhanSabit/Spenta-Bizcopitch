@@ -36,67 +36,86 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (!id.includes('node_modules')) return undefined;
+          const normalized = id.replace(/\\/g, '/');
+
+          // Keep Vite's virtual preload helper out of lazy PDF/chart chunks so the entry bundle never eagerly preloads jsPDF
+          if (normalized.includes('vite/preload-helper') || normalized.includes('commonjsHelpers')) {
+            return 'vendor-react';
+          }
+
+          if (!normalized.includes('node_modules')) return undefined;
 
           // 3D Engine & Controls (Loaded on demand with 3D canvas tabs)
-          if (id.includes('/three/addons/') || id.includes('/three/examples/')) {
+          if (normalized.includes('/three/addons/') || normalized.includes('/three/examples/')) {
             return 'vendor-three-addons';
           }
-          if (id.includes('/three/')) {
+          if (normalized.includes('/three/')) {
             return 'vendor-three-core';
           }
 
-          // Charts & Data Visualization (Split into recharts, d3/victory, and state management)
-          if (id.includes('/recharts/')) {
-            return 'vendor-recharts';
+          // Charts & Data Visualization (Granular split: recharts, d3, victory, and Redux state)
+          if (normalized.includes('/recharts/')) {
+            return 'vendor-charts-recharts';
           }
-          if (id.includes('/d3-') || id.includes('/victory-vendor/')) {
+          if (normalized.includes('/d3-')) {
             return 'vendor-charts-d3';
           }
+          if (normalized.includes('/victory-vendor/') || normalized.includes('/victory/')) {
+            return 'vendor-charts-victory';
+          }
           if (
-            id.includes('/@reduxjs/toolkit/') ||
-            id.includes('/react-redux/') ||
-            id.includes('/immer/') ||
-            id.includes('/reselect/')
+            normalized.includes('/@reduxjs/toolkit/') ||
+            normalized.includes('/react-redux/') ||
+            normalized.includes('/immer/') ||
+            normalized.includes('/reselect/') ||
+            normalized.includes('/redux/')
           ) {
             return 'vendor-charts-state';
           }
 
-          // PDF Generation & Document Export (Granular split for print & export modules)
-          if (id.includes('/jspdf/')) {
+          // PDF Generation & Document Export (Granular split: jspdf, html2canvas, canvg, dompurify, compression)
+          if (normalized.includes('/jspdf/')) {
             return 'vendor-pdf-jspdf';
           }
-          if (id.includes('/fflate/') || id.includes('/fast-png/')) {
-            return 'vendor-pdf-compression';
-          }
-          if (id.includes('/html2canvas/')) {
+          if (normalized.includes('/html2canvas/')) {
             return 'vendor-pdf-html2canvas';
           }
-          if (id.includes('/canvg/')) {
+          if (normalized.includes('/canvg/')) {
             return 'vendor-pdf-canvg';
           }
-          if (id.includes('/dompurify/')) {
+          if (normalized.includes('/dompurify/')) {
             return 'vendor-pdf-dompurify';
+          }
+          if (
+            normalized.includes('/fflate/') ||
+            normalized.includes('/fast-png/') ||
+            normalized.includes('/pako/')
+          ) {
+            return 'vendor-pdf-compression';
           }
 
           // Animations & Motion
-          if (id.includes('/framer-motion/')) {
+          if (
+            normalized.includes('/framer-motion/') ||
+            normalized.includes('/motion-dom/') ||
+            normalized.includes('/motion-utils/')
+          ) {
             return 'vendor-framer-motion';
           }
-          if (id.includes('/gsap/')) {
+          if (normalized.includes('/gsap/')) {
             return 'vendor-gsap';
           }
 
           // Icons
-          if (id.includes('/lucide-react/')) {
+          if (normalized.includes('/lucide-react/')) {
             return 'vendor-icons';
           }
 
           // React Core Framework
           if (
-            id.includes('/react/') ||
-            id.includes('/react-dom/') ||
-            id.includes('/scheduler/')
+            normalized.includes('/react/') ||
+            normalized.includes('/react-dom/') ||
+            normalized.includes('/scheduler/')
           ) {
             return 'vendor-react';
           }

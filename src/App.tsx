@@ -10,35 +10,23 @@ import { SpentaThemeView } from './components/SpentaThemeView';
 import { MobileGridToggle } from './components/MobileGridToggle';
 import { ResilientErrorBoundary } from './components/ResilientErrorBoundary';
 import { lazyWithRetry } from './utils/lazyWithRetry';
+import {
+  aiAssistantImporter,
+  preloadTabView,
+  stackComposerImporter,
+  viewImporters,
+} from './utils/viewPreloaders';
 
-const StackComposerDrawer = lazyWithRetry(() =>
-  import('./components/StackComposerDrawer').then((m) => ({ default: m.StackComposerDrawer })),
-);
+const StackComposerDrawer = lazyWithRetry(stackComposerImporter);
 
-const SpentaBrainVault = lazyWithRetry(() =>
-  import('./components/SpentaBrainVault').then((m) => ({ default: m.SpentaBrainVault })),
-);
-const InfographicsView = lazyWithRetry(() =>
-  import('./components/InfographicsView').then((m) => ({ default: m.InfographicsView })),
-);
-const FinancialsView = lazyWithRetry(() =>
-  import('./components/FinancialsView').then((m) => ({ default: m.FinancialsView })),
-);
-const SpentaCoreView = lazyWithRetry(() =>
-  import('./components/SpentaCoreView').then((m) => ({ default: m.SpentaCoreView })),
-);
-const TheBrainView = lazyWithRetry(() =>
-  import('./components/TheBrainView').then((m) => ({ default: m.TheBrainView })),
-);
-const PitchDeckView = lazyWithRetry(() =>
-  import('./components/PitchDeckView').then((m) => ({ default: m.PitchDeckView })),
-);
-const ResourcesView = lazyWithRetry(() =>
-  import('./components/ResourcesView').then((m) => ({ default: m.ResourcesView })),
-);
-const SpentaAiAssistant = lazyWithRetry(() =>
-  import('./components/SpentaAiAssistant').then((m) => ({ default: m.SpentaAiAssistant })),
-);
+const SpentaBrainVault = lazyWithRetry(viewImporters['App Vault']);
+const InfographicsView = lazyWithRetry(viewImporters.Infographics);
+const FinancialsView = lazyWithRetry(viewImporters.Financials);
+const SpentaCoreView = lazyWithRetry(viewImporters['Spenta Core']);
+const TheBrainView = lazyWithRetry(viewImporters['The Brain']);
+const PitchDeckView = lazyWithRetry(viewImporters['Pitch Deck']);
+const ResourcesView = lazyWithRetry(viewImporters.Resources);
+const SpentaAiAssistant = lazyWithRetry(aiAssistantImporter);
 
 function ViewLoadingFallback() {
   return (
@@ -88,11 +76,13 @@ function PortalShell() {
   const {
     activeTab,
     setActiveTab,
+    drawerOpen,
     sharedSnapshotSummary,
     dismissSharedSnapshot,
     resetToLocalDefaults,
   } = useStack();
   const { theme } = useTheme();
+  const [hasOpenedDrawer, setHasOpenedDrawer] = useState(drawerOpen);
   const [envNotice, setEnvNotice] = useState<EnvironmentNotice | null>(() =>
     typeof navigator !== 'undefined' && navigator.onLine === false
       ? {
@@ -104,6 +94,12 @@ function PortalShell() {
       : null,
   );
   const [recheckingHealth, setRecheckingHealth] = useState(false);
+
+  useEffect(() => {
+    if (drawerOpen) {
+      setHasOpenedDrawer(true);
+    }
+  }, [drawerOpen]);
 
   useEffect(() => {
     const handleOffline = () => {
@@ -293,6 +289,8 @@ function PortalShell() {
             </span>
             <button
               type="button"
+              onMouseEnter={() => preloadTabView('Resources')}
+              onFocus={() => preloadTabView('Resources')}
               onClick={() => {
                 setActiveTab('Resources');
                 window.setTimeout(() => {
@@ -310,9 +308,11 @@ function PortalShell() {
       </footer>
 
       <GlobalSearchBar />
-      <Suspense fallback={null}>
-        <StackComposerDrawer />
-      </Suspense>
+      {(hasOpenedDrawer || drawerOpen) && (
+        <Suspense fallback={null}>
+          <StackComposerDrawer />
+        </Suspense>
+      )}
       <MobileGridToggle />
       <Suspense fallback={null}>
         <SpentaAiAssistant />
