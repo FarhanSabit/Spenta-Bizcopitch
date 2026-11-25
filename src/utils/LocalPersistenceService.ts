@@ -130,6 +130,35 @@ export interface OfflinePersistenceBundle {
   stores: Record<PersistenceStoreName, Record<string, unknown>>;
 }
 
+export interface PersistenceStoreStat {
+  store: PersistenceStoreName;
+  count: number;
+  bytes: number;
+}
+
+export interface PersistenceStorageMetrics {
+  dbName: string;
+  dbVersion: number;
+  backend: 'indexeddb' | 'fallback';
+  usageBytes: number | null;
+  quotaBytes: number | null;
+  estimatedPayloadBytes: number;
+  totalEntries: number;
+  scenarioEntries: number;
+  workspaceEntries: number;
+  autoSavedWorkspacePresent: boolean;
+  storeStats: PersistenceStoreStat[];
+  lastUpdatedAt: string | null;
+}
+
+export interface PersistenceReconciliationResult {
+  ok: boolean;
+  backend: 'indexeddb' | 'fallback';
+  verifiedStores: number;
+  totalEntries: number;
+  reconciledAt: string;
+}
+
 interface StoredRow<T = unknown> {
   id: string;
   value: T;
@@ -708,6 +737,141 @@ export class LocalPersistenceService {
         }
       }),
     );
+  }
+
+  private estimateSerializedBytes(value: unknown): number {
+    try {
+      const json = JSON.stringify(value);
+      if (!json) return 0;
+      if (typeof TextEncoder !== 'undefined') {
+        return new TextEncoder().encode(json).length;
+      }
+      return json.length * 2;
+    } catch {
+      return 0;
+    }
+  }
+
+  async getStorageMetrics(): Promise<PersistenceStorageMetrics> {
+    const storeStats: PersistenceStoreStat[] = [];
+    let totalEntries = 0;
+    let estimatedPayloadBytes = 0;
+    let scenarioEntries = 0;
+    let workspaceEntries = 0;
+    let autoSavedWorkspacePresent = false;
+    let latestTs: string | null = null;
+
+    const allStoreMaps = await Promise.all(
+      PERSISTENCE_STORES.map(async (store) => ({
+        store,
+        records: await this.getAllRecords<Record<string, unknown>>(store),
+      })),
+    );
+
+    for (const { store, records } of allStoreMaps) {
+      const entries = Object.entries(records);
+      const count = entries.length;
+      const bytes = count === 0 ? 0 : this.estimateSerializedBytes(records);
+      storeStats.push({ store, count, bytes });
+      totalEntries += count;
+      estimatedPayloadBytes += bytes;
+
+      if (store === 'calculatorScenarios') {
+        scenarioEntries = count;
+      } else if (store === 'workspaceSnapshots') {
+        workspaceEntries = count;
+        autoSavedWorkspacePresent = Object.prototype.hasOwnProperty.call(
+          records,
+          DEFAULT_WORKSPACE_SNAPSHOT_KEY,
+        );
+      }
+
+      for (const [, val] of entries) {
+        if (val && typeof val === 'object') {
+          const ts =
+            (val as { updatedAt?: unknown }).updatedAt ??
+            (val as { createdAt?: unknown }).createdAt;
+          if (typeof ts === 'string' && (!latestTs || ts.localeCompare(latestTs) > 0)) {
+            latestTs = ts;
+          }
+        }
+      }
+    }
+
+    let usageBytes: number | null = null;
+    let quotaBytes: number | null = null;
+    if (
+      typeof navigator !== 'undefined' &&
+      navigator.storage &&
+      typeof navigator.storage.estimate === 'function'
+    ) {
+      try {
+        const estimate = await navigator.storage.estimate();
+        if (typeof estimate.usage === 'number' && Number.isFinite(estimate.usage)) {
+          usageBytes = estimate.usage;
+        }
+        if (typeof estimate.quota === 'number' && Number.isFinite(estimate.quota)) {
+          quotaBytes = estimate.quota;
+        }
+      } catch {
+        // ignore StorageManager quota API errors in restricted contexts
+      }
+    }
+
+    return {
+      dbName: this.dbName,
+      dbVersion: this.dbVersion,
+      backend: this.getStorageBackend(),
+      usageBytes,
+      quotaBytes,
+      estimatedPayloadBytes,
+      totalEntries,
+      scenarioEntries,
+      workspaceEntries,
+      autoSavedWorkspacePresent,
+      storeStats,
+      lastUpdatedAt: latestTs,
+    };
+  }
+
+  async reconcileAndVerify(): Promise<PersistenceReconciliationResult> {
+    const db = await this.openDatabase();
+    let verifiedStores = 0;
+    let totalEntries = 0;
+
+    if (db) {
+      // Flush any fallback records into IndexedDB and verify every object store is readable
+      for (const storeName of PERSISTENCE_STORES) {
+        const fallbackRows = this.listFallback(storeName);
+        for (const row of fallbackRows) {
+          try {
+            await db.put(storeName, row);
+          } catch {
+            // ignore individual fallback migration error
+          }
+        }
+        try {
+          const count = await db.count(storeName);
+          totalEntries += count;
+          verifiedStores += 1;
+        } catch {
+          // store count failed
+        }
+      }
+    } else {
+      for (const storeName of PERSISTENCE_STORES) {
+        totalEntries += this.listFallback(storeName).length;
+        verifiedStores += 1;
+      }
+    }
+
+    return {
+      ok: verifiedStores === PERSISTENCE_STORES.length,
+      backend: db ? 'indexeddb' : 'fallback',
+      verifiedStores,
+      totalEntries,
+      reconciledAt: new Date().toISOString(),
+    };
   }
 
   getStorageBackend(): 'indexeddb' | 'fallback' {

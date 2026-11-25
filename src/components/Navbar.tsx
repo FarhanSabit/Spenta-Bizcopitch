@@ -4,6 +4,7 @@ import { NAV_TABS, NavTab } from '../data/spentaManifest';
 import { useTheme } from '../context/ThemeContext';
 import { useStack } from '../store/StackContext';
 import { SpentaLogo } from './SpentaLogo';
+import { SyncStatusIndicator } from './SyncStatusIndicator';
 import {
   getPanelPreloadHandlers,
   preloadTabView,
@@ -89,19 +90,23 @@ export function Navbar() {
           })}
         </nav>
 
-        {/* Zone 3: Command Palette + Stone/Nocturnal Theme Toggle + Primary Stack Composer CTA */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        {/* Zone 3: Sync Status + Command Palette + Stone/Nocturnal Theme Toggle + Primary Stack Composer CTA */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="hidden md:flex items-center shrink-0">
+            <SyncStatusIndicator />
+          </div>
+
           <button
             type="button"
             onClick={() => setCommandPaletteOpen(true)}
-            className="inline-flex items-center justify-between gap-2 h-9 sm:h-8 px-2.5 sm:px-3 sm:w-52 md:w-64 lg:w-36 xl:w-44 2xl:w-64 rounded-md bg-[#F2EFE9] dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] text-[#4A5163] dark:text-[#C8D0E4] text-xs transition-colors cursor-pointer whitespace-nowrap min-w-0"
+            className="inline-flex items-center justify-between gap-1.5 h-9 sm:h-8 px-2 sm:px-2.5 sm:w-40 md:w-44 lg:w-28 xl:w-32 2xl:w-44 rounded-md bg-[#F2EFE9] dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] text-[#4A5163] dark:text-[#C8D0E4] text-xs transition-colors cursor-pointer whitespace-nowrap min-w-0"
             aria-label="Open Command Palette (Cmd+K)"
             title="Search apps, tabs, recipes, L1–L6… (⌘K)"
           >
-            <span className="inline-flex items-center gap-2 min-w-0">
+            <span className="inline-flex items-center gap-1.5 min-w-0">
               <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
               <span className="hidden sm:inline truncate text-[#5F6576] dark:text-[#8E96B0]">
-                Search apps, tabs, L1–L6…
+                Search…
               </span>
             </span>
             <kbd className="hidden sm:inline-block shrink-0 font-mono text-[10px] text-[#5F6576] dark:text-[#8E96B0] bg-white dark:bg-[#0B1020] border border-[#E4DFD6] dark:border-[#232B4A] px-1.5 py-0.5 rounded leading-none">
@@ -112,7 +117,7 @@ export function Navbar() {
           <button
             type="button"
             onClick={toggleTheme}
-            className="inline-flex items-center justify-center gap-1.5 h-9 sm:h-8 px-2.5 sm:px-2 rounded-md bg-[#F2EFE9] dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] text-[#16213A] dark:text-[#E7EBF5] text-xs font-medium transition-colors cursor-pointer shrink-0 whitespace-nowrap"
+            className="inline-flex items-center justify-center gap-1.5 h-9 sm:h-8 px-2 rounded-md bg-[#F2EFE9] dark:bg-[#141A32] border border-[#E4DFD6] dark:border-[#232B4A] hover:border-[#1F3863] dark:hover:border-[#8FA6E8] text-[#16213A] dark:text-[#E7EBF5] text-xs font-medium transition-colors cursor-pointer shrink-0 whitespace-nowrap"
             aria-label={
               paletteMode === 'nocturnal'
                 ? 'Switch to Stone light theme'
@@ -129,7 +134,7 @@ export function Navbar() {
             ) : (
               <Moon className="w-3.5 h-3.5 text-[#1F3863]" strokeWidth={1.6} />
             )}
-            <span className="hidden xl:inline">
+            <span className="hidden 2xl:inline">
               {paletteMode === 'nocturnal' ? 'Nocturnal' : 'Stone'}
             </span>
           </button>
@@ -138,7 +143,7 @@ export function Navbar() {
             type="button"
             {...getPanelPreloadHandlers('stack-composer')}
             onClick={() => setDrawerOpen(!drawerOpen)}
-            className="inline-flex items-center gap-1.5 h-9 sm:h-8 px-2.5 sm:px-3.5 rounded-md bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 h-9 sm:h-8 px-2.5 sm:px-3 rounded-md bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
             <Layers className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
             <span className="hidden sm:inline">Stack Composer</span>
@@ -188,6 +193,11 @@ export function Navbar() {
                 </button>
               );
             })}
+          </div>
+
+          {/* Mobile Sync Status & Force Sync */}
+          <div className="md:hidden pt-2.5 border-t border-[#E4DFD6] dark:border-[#232B4A]">
+            <SyncStatusIndicator compact />
           </div>
 
           {/* Mobile-only Display Density Setting for .bg-obsidian-grid */}

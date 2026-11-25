@@ -200,7 +200,23 @@ describe('LocalPersistenceService (offline-first storage v3)', () => {
     assert.equal(Object.keys(bundle.stores.contactInquiries).length, 1);
     assert.equal(Object.keys(bundle.stores.diligencePrefs).length, 1);
 
+    const metricsBeforeClear = await svc.getStorageMetrics();
+    assert.equal(metricsBeforeClear.totalEntries, 8);
+    assert.equal(metricsBeforeClear.scenarioEntries, 1);
+    assert.equal(metricsBeforeClear.workspaceEntries, 1);
+    assert.ok(metricsBeforeClear.estimatedPayloadBytes > 0);
+    assert.equal(metricsBeforeClear.storeStats.length, 8);
+
+    const reconcile = await svc.reconcileAndVerify();
+    assert.equal(reconcile.ok, true);
+    assert.equal(reconcile.verifiedStores, 8);
+    assert.equal(reconcile.totalEntries, 8);
+
     await svc.clearAll();
+    const metricsAfterClear = await svc.getStorageMetrics();
+    assert.equal(metricsAfterClear.totalEntries, 0);
+    assert.equal(metricsAfterClear.scenarioEntries, 0);
+    assert.equal(metricsAfterClear.workspaceEntries, 0);
     assert.equal(await svc.loadCalculatorState(), null);
     assert.equal((await svc.listCalculatorScenarios()).length, 0);
     assert.equal((await svc.listWorkspaceSnapshots()).length, 0);

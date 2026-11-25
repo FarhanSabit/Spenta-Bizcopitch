@@ -11,6 +11,7 @@ import {
   Film,
   Grid2x2,
   Grid3x3,
+  HardDrive,
   Landmark,
   Layers,
   Mic,
@@ -41,6 +42,7 @@ import { useStack } from '../store/StackContext';
 import { usePathwayBrainSync } from '../hooks/usePathwayBrainSync';
 import { copyTextWithFallback } from '../utils/shareUrlCodec';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { StorageManager } from './StorageManager';
 
 const SovereignBrain3D = lazyWithRetry(() =>
   import('./three/SovereignBrain3D').then((m) => ({ default: m.SovereignBrain3D })),
@@ -49,7 +51,7 @@ const ShowreelAndBrandsStudio = lazyWithRetry(() =>
   import('./ShowreelAndBrandsStudio').then((m) => ({ default: m.ShowreelAndBrandsStudio })),
 );
 
-type VaultViewMode = 'matrix' | 'grid' | 'brain3d' | 'showreel';
+type VaultViewMode = 'matrix' | 'grid' | 'brain3d' | 'showreel' | 'storage';
 
 const GOVERNANCE_MARQUEE_ITEMS = [
   'ZERO CLOUD PII EXFILTRATION',
@@ -107,7 +109,13 @@ const VAULT_VIEW_MODE_STORAGE_KEY = 'spenta_vault_view_mode_v1';
 function loadStoredVaultViewMode(): VaultViewMode {
   try {
     const raw = window.localStorage.getItem(VAULT_VIEW_MODE_STORAGE_KEY);
-    if (raw === 'matrix' || raw === 'grid' || raw === 'brain3d' || raw === 'showreel') {
+    if (
+      raw === 'matrix' ||
+      raw === 'grid' ||
+      raw === 'brain3d' ||
+      raw === 'showreel' ||
+      raw === 'storage'
+    ) {
       return raw;
     }
   } catch {
@@ -320,10 +328,23 @@ export function SpentaBrainVault() {
                 <Film className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span>Showreel Studio</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('storage')}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                  viewMode === 'storage'
+                    ? 'bg-[#1F3863] text-white dark:bg-[#8FA6E8] dark:text-[#0B1020]'
+                    : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
+                }`}
+              >
+                <HardDrive className="w-3.5 h-3.5" strokeWidth={1.5} />
+                <span>Storage Manager</span>
+              </button>
             </div>
           </div>
 
           {/* Filter Bar & 1-Click Starter Recipes */}
+          {viewMode !== 'storage' && (
           <div className="mt-5 pt-4 border-t border-[#E4DFD6] dark:border-[#232B4A] flex flex-col xl:flex-row xl:items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative flex-1 min-w-[200px] sm:flex-initial sm:w-64">
@@ -409,6 +430,7 @@ export function SpentaBrainVault() {
               )}
             </div>
           </div>
+          )}
         </div>
 
         {/* Governance & Engineering Marquee Ticker */}
@@ -1067,6 +1089,9 @@ export function SpentaBrainVault() {
           <ShowreelAndBrandsStudio seekSignal={showreelSeek} />
         </React.Suspense>
       )}
+
+      {/* VIEW 5: INDEXEDDB LOCAL STORAGE MANAGER */}
+      {viewMode === 'storage' && <StorageManager />}
     </div>
   );
 }

@@ -37,6 +37,7 @@ import {
   LocalPersistenceService,
   OfflineContactInquiry,
   PersistedInvestorCalculatorState,
+  PersistenceStorageMetrics,
   UserWorkspaceSnapshot,
 } from '../utils/LocalPersistenceService';
 import {
@@ -47,6 +48,7 @@ import {
 } from '../data/unifiedSsotData';
 
 export type InvestorCalculatorState = Omit<PersistedInvestorCalculatorState, 'updatedAt'>;
+export type SyncStatus = 'synced' | 'syncing' | 'offline';
 
 export const DEFAULT_INVESTOR_CALCULATOR_STATE: InvestorCalculatorState = {
   scenario: 'conservative',
@@ -589,6 +591,15 @@ interface StackContextValue {
   closeArPreview: () => void;
   loadCaseStudyStack: (appIds: string[], label: string) => void;
   openBriefingSection: (sectionId: string) => void;
+  // Offline persistence sync telemetry & storage management
+  syncStatus: SyncStatus;
+  isOnline: boolean;
+  lastSyncedAt: string | null;
+  storageRevision: number;
+  forceSync: () => Promise<boolean>;
+  getStorageMetrics: () => Promise<PersistenceStorageMetrics>;
+  clearLocalCachedData: () => Promise<void>;
+  exportOfflineBackup: () => Promise<void>;
 }
 
 const StackContext = createContext<StackContextValue | null>(null);
@@ -989,6 +1000,44 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     }),
   );
   const [investorCalculatorHydrated, setInvestorCalculatorHydrated] = useState<boolean>(false);
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
+      ? navigator.onLine
+      : true,
+  );
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [storageRevision, setStorageRevision] = useState<number>(0);
+  const activeSyncOpsRef = useRef<number>(0);
+  const clearGuardUntilRef = useRef<number>(0);
+
+  const runTrackedPersistence = useCallback(
+    async <T,>(task: () => Promise<T>, options?: { minVisualMs?: number }): Promise<T> => {
+      activeSyncOpsRef.current += 1;
+      setIsSyncing(true);
+      const startedAt = Date.now();
+      try {
+        const result = await task();
+        if (options?.minVisualMs) {
+          const elapsed = Date.now() - startedAt;
+          if (elapsed < options.minVisualMs) {
+            await new Promise((resolve) => window.setTimeout(resolve, options.minVisualMs! - elapsed));
+          }
+        }
+        setLastSyncedAt(new Date().toISOString());
+        setStorageRevision((rev) => rev + 1);
+        return result;
+      } finally {
+        activeSyncOpsRef.current = Math.max(0, activeSyncOpsRef.current - 1);
+        if (activeSyncOpsRef.current === 0) {
+          setIsSyncing(false);
+        }
+      }
+    },
+    [],
+  );
+
+  const syncStatus: SyncStatus = !isOnline ? 'offline' : isSyncing ? 'syncing' : 'synced';
 
   useEffect(() => {
     if (!investorCalculatorHydrated) return;
@@ -1206,48 +1255,63 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
 
   const saveCalculatorScenario = useCallback<StackContextValue['saveCalculatorScenario']>(
     async (name, description) => {
-      const saved = await persistenceService.saveScenario({
-        name,
-        description,
-        state: investorCalculatorState,
-      });
+      clearGuardUntilRef.current = 0;
+      const saved = await runTrackedPersistence(() =>
+        persistenceService.saveScenario({
+          name,
+          description,
+          state: investorCalculatorState,
+        }),
+      );
       setSavedCalculatorScenarios((prev) => [
         saved,
         ...prev.filter((item) => item.id !== saved.id),
       ]);
       return saved;
     },
-    [investorCalculatorState, persistenceService],
+    [investorCalculatorState, persistenceService, runTrackedPersistence],
   );
 
   const applyCalculatorScenario = useCallback(
     (id: string) => {
+      const applyRecord = (match: InvestorCalculatorScenario) => {
+        clearGuardUntilRef.current = 0;
+        setInvestorCalculatorState(sanitizeInvestorCalculatorState(match.state));
+        setAutoNotice(`Loaded saved scenario "${match.name}" from offline IndexedDB storage`);
+      };
       const match = savedCalculatorScenarios.find((s) => s.id === id);
-      if (!match) return;
-      setInvestorCalculatorState(sanitizeInvestorCalculatorState(match.state));
-      setAutoNotice(`Loaded saved scenario "${match.name}" from offline IndexedDB storage`);
+      if (match) {
+        applyRecord(match);
+        return;
+      }
+      void persistenceService.getScenario(id).then((stored) => {
+        if (stored) applyRecord(stored);
+      });
     },
-    [savedCalculatorScenarios],
+    [savedCalculatorScenarios, persistenceService],
   );
 
   const deleteCalculatorScenario = useCallback(
     async (id: string) => {
-      await persistenceService.deleteCalculatorScenario(id);
+      await runTrackedPersistence(() => persistenceService.deleteCalculatorScenario(id));
       setSavedCalculatorScenarios((prev) => prev.filter((item) => item.id !== id));
     },
-    [persistenceService],
+    [persistenceService, runTrackedPersistence],
   );
 
   const saveWorkspaceSnapshot = useCallback<StackContextValue['saveWorkspaceSnapshot']>(
     async (name) => {
-      const saved = await persistenceService.saveWorkspaceSnapshot({
-        name,
-        activeTab,
-        selectedIds,
-        deploymentTarget,
-        hitlConfidence,
-        calculatorState: investorCalculatorState,
-      });
+      clearGuardUntilRef.current = 0;
+      const saved = await runTrackedPersistence(() =>
+        persistenceService.saveWorkspaceSnapshot({
+          name,
+          activeTab,
+          selectedIds,
+          deploymentTarget,
+          hitlConfidence,
+          calculatorState: investorCalculatorState,
+        }),
+      );
       setWorkspaceSnapshots((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]);
       setAutoNotice(`Saved offline workspace snapshot "${saved.name}" to IndexedDB`);
       return saved;
@@ -1259,55 +1323,197 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
       hitlConfidence,
       investorCalculatorState,
       persistenceService,
+      runTrackedPersistence,
     ],
   );
 
   const restoreWorkspaceSnapshot = useCallback(
     (id: string) => {
+      const applySnapshot = (match: UserWorkspaceSnapshot) => {
+        if (NAV_TABS.includes(match.activeTab as NavTab)) {
+          setActiveTab(match.activeTab as NavTab);
+        }
+        if (Array.isArray(match.selectedIds) && match.selectedIds.length > 0) {
+          const validIds = match.selectedIds.filter((appId) => SPENTA_APPS.some((a) => a.id === appId));
+          if (validIds.length > 0) setSelectedIds(validIds);
+        }
+        if (match.deploymentTarget in DEPLOYMENT_PROFILES) {
+          setDeploymentTargetState(match.deploymentTarget as DeploymentTargetId);
+        }
+        if (typeof match.hitlConfidence === 'number' && Number.isFinite(match.hitlConfidence)) {
+          setHitlConfidence(match.hitlConfidence);
+        }
+        if (match.calculatorState) {
+          setInvestorCalculatorState(sanitizeInvestorCalculatorState(match.calculatorState));
+        }
+        setAutoNotice(`Restored offline workspace snapshot "${match.name}" from IndexedDB`);
+      };
       const match = workspaceSnapshots.find((s) => s.id === id);
-      if (!match) return;
-      if (NAV_TABS.includes(match.activeTab as NavTab)) {
-        setActiveTab(match.activeTab as NavTab);
+      if (match) {
+        applySnapshot(match);
+        return;
       }
-      if (Array.isArray(match.selectedIds) && match.selectedIds.length > 0) {
-        const validIds = match.selectedIds.filter((appId) => SPENTA_APPS.some((a) => a.id === appId));
-        if (validIds.length > 0) setSelectedIds(validIds);
-      }
-      if (match.deploymentTarget in DEPLOYMENT_PROFILES) {
-        setDeploymentTargetState(match.deploymentTarget as DeploymentTargetId);
-      }
-      if (typeof match.hitlConfidence === 'number' && Number.isFinite(match.hitlConfidence)) {
-        setHitlConfidence(match.hitlConfidence);
-      }
-      if (match.calculatorState) {
-        setInvestorCalculatorState(sanitizeInvestorCalculatorState(match.calculatorState));
-      }
-      setAutoNotice(`Restored offline workspace snapshot "${match.name}" from IndexedDB`);
+      void persistenceService.getWorkspaceSnapshot(id).then((stored) => {
+        if (stored) applySnapshot(stored);
+      });
     },
-    [workspaceSnapshots],
+    [workspaceSnapshots, persistenceService],
   );
 
   const deleteWorkspaceSnapshot = useCallback(
     async (id: string) => {
-      await persistenceService.deleteWorkspaceSnapshot(id);
+      await runTrackedPersistence(() => persistenceService.deleteWorkspaceSnapshot(id));
       setWorkspaceSnapshots((prev) => prev.filter((item) => item.id !== id));
     },
-    [persistenceService],
+    [persistenceService, runTrackedPersistence],
   );
+
+  const getStorageMetrics = useCallback(() => {
+    return persistenceService.getStorageMetrics();
+  }, [persistenceService]);
+
+  const forceSync = useCallback(async (): Promise<boolean> => {
+    const currentlyOnline =
+      typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
+        ? navigator.onLine
+        : isOnline;
+    setIsOnline(currentlyOnline);
+    if (!currentlyOnline) {
+      setAutoNotice('Offline mode — changes remain safely queued in local IndexedDB until connection returns');
+      return false;
+    }
+
+    clearGuardUntilRef.current = 0;
+    const reconciliation = await runTrackedPersistence(
+      async () => {
+        await Promise.all([
+          persistenceService.saveCalculatorState(investorCalculatorState),
+          persistenceService.saveWorkspaceSnapshot({
+            id: DEFAULT_WORKSPACE_SNAPSHOT_KEY,
+            name: 'Auto-Saved Workspace',
+            activeTab,
+            selectedIds,
+            deploymentTarget,
+            hitlConfidence,
+            calculatorState: investorCalculatorState,
+          }),
+          persistenceService.saveUserSession({
+            activeTab,
+            selectedIds,
+            deploymentTarget,
+            hitlConfidence,
+            savedProposalsCount: savedProposals.length,
+            neuralCoreSystem: neuralCoreState.activeSystem,
+          }),
+          persistenceService.saveDiligencePrefs({
+            personaTrack,
+            currency,
+            bookmarkedDocIds,
+          }),
+        ]);
+        const result = await persistenceService.reconcileAndVerify();
+        const [scenarios, snapshots] = await Promise.all([
+          persistenceService.listCalculatorScenarios(),
+          persistenceService.listWorkspaceSnapshots(),
+        ]);
+        setSavedCalculatorScenarios(scenarios);
+        setWorkspaceSnapshots(snapshots);
+        return result;
+      },
+      { minVisualMs: 220 },
+    );
+
+    setAutoNotice(
+      `Reconciled ${reconciliation.totalEntries} records across ${reconciliation.verifiedStores} IndexedDB stores`,
+    );
+    return reconciliation.ok;
+  }, [
+    isOnline,
+    runTrackedPersistence,
+    persistenceService,
+    investorCalculatorState,
+    activeTab,
+    selectedIds,
+    deploymentTarget,
+    hitlConfidence,
+    savedProposals.length,
+    neuralCoreState.activeSystem,
+    personaTrack,
+    currency,
+    bookmarkedDocIds,
+  ]);
+
+  const clearLocalCachedData = useCallback(async (): Promise<void> => {
+    clearGuardUntilRef.current = Date.now() + 600;
+    await runTrackedPersistence(async () => {
+      await persistenceService.clearAll();
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const k = window.localStorage.key(i);
+          if (k && k.startsWith('spenta_')) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+      } catch {
+        // ignore storage errors
+      }
+    });
+
+    setSavedCalculatorScenarios([]);
+    setWorkspaceSnapshots([]);
+    setInvestorFeedback([]);
+    setContactInquiries([]);
+    setSavedProposals([]);
+    setBookmarkedDocIds([]);
+    setSelectedIds(DEFAULT_SELECTED_IDS);
+    setDeploymentTargetState('on-prem');
+    setHitlConfidence(0.91);
+    setInvestorCalculatorState({
+      ...DEFAULT_INVESTOR_CALCULATOR_STATE,
+      mixScopeWeights: { ...DEFAULT_INVESTOR_CALCULATOR_STATE.mixScopeWeights },
+    });
+    setAutoNotice('Cleared all local IndexedDB stores and cached workspace data');
+  }, [persistenceService, runTrackedPersistence]);
+
+  const exportOfflineBackup = useCallback(async (): Promise<void> => {
+    const bundle = await persistenceService.exportAllOfflineData();
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `spenta-offline-storage-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setAutoNotice('Exported complete IndexedDB offline backup JSON');
+  }, [persistenceService]);
+
+  // Track browser online/offline connectivity and automatically reconcile when connection returns
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      if (investorCalculatorHydrated) {
+        void runTrackedPersistence(() => persistenceService.reconcileAndVerify());
+      }
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [investorCalculatorHydrated, persistenceService, runTrackedPersistence]);
 
   // Hydrate investor calculator state, saved scenarios, latest workspace snapshot, diligence preferences, feedback, inquiries, and session from IndexedDB on mount
   useEffect(() => {
     let active = true;
-    const initialFlags = initialLocalStorageFlagsRef.current ?? {
-      hasTab: false,
-      hasStack: false,
-      hasDeploy: false,
-      hasNeural: false,
-    };
-    const hasStoredTab = initialFlags.hasTab;
-    const hasStoredStack = initialFlags.hasStack;
-    const hasStoredDeploy = initialFlags.hasDeploy;
-    const hasStoredNeural = initialFlags.hasNeural;
+    const hasStoredNeural = initialLocalStorageFlagsRef.current?.hasNeural ?? false;
 
     void Promise.all([
       persistenceService.loadCalculatorState(),
@@ -1362,21 +1568,21 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
           setContactInquiries(inquiryList);
         }
         if (!initialShareSnapshot) {
-          const restoredTab = session?.activeTab ?? latestSnapshot?.activeTab;
-          const restoredIds = session?.selectedIds ?? latestSnapshot?.selectedIds;
-          const restoredDeploy = session?.deploymentTarget ?? latestSnapshot?.deploymentTarget;
-          const restoredHitl = session?.hitlConfidence ?? latestSnapshot?.hitlConfidence;
+          const restoredTab = latestSnapshot?.activeTab ?? session?.activeTab;
+          const restoredIds = latestSnapshot?.selectedIds ?? session?.selectedIds;
+          const restoredDeploy = latestSnapshot?.deploymentTarget ?? session?.deploymentTarget;
+          const restoredHitl = latestSnapshot?.hitlConfidence ?? session?.hitlConfidence;
 
-          if (!hasStoredTab && restoredTab && NAV_TABS.includes(restoredTab as NavTab)) {
+          if (restoredTab && NAV_TABS.includes(restoredTab as NavTab)) {
             setActiveTab(restoredTab as NavTab);
           }
-          if (!hasStoredStack && Array.isArray(restoredIds) && restoredIds.length > 0) {
+          if (Array.isArray(restoredIds) && restoredIds.length > 0) {
             const validIds = restoredIds.filter((id) => SPENTA_APPS.some((a) => a.id === id));
             if (validIds.length > 0) {
               setSelectedIds(validIds);
             }
           }
-          if (!hasStoredDeploy && restoredDeploy && restoredDeploy in DEPLOYMENT_PROFILES) {
+          if (restoredDeploy && restoredDeploy in DEPLOYMENT_PROFILES) {
             setDeploymentTargetState(restoredDeploy as DeploymentTargetId);
           }
           if (
@@ -1399,6 +1605,8 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
             }));
           }
         }
+        setLastSyncedAt(latestSnapshot?.updatedAt ?? savedCalc?.updatedAt ?? session?.updatedAt ?? null);
+        setStorageRevision((rev) => rev + 1);
         setInvestorCalculatorHydrated(true);
       },
     );
@@ -1411,16 +1619,22 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
   // Automatically persist investor calculator state & active workspace snapshot to IndexedDB on every change
   useEffect(() => {
     if (!investorCalculatorHydrated) return;
+    if (Date.now() < clearGuardUntilRef.current) return;
     const timer = window.setTimeout(() => {
-      void persistenceService.saveCalculatorState(investorCalculatorState);
-      void persistenceService.saveWorkspaceSnapshot({
-        id: DEFAULT_WORKSPACE_SNAPSHOT_KEY,
-        name: 'Auto-Saved Workspace',
-        activeTab,
-        selectedIds,
-        deploymentTarget,
-        hitlConfidence,
-        calculatorState: investorCalculatorState,
+      if (Date.now() < clearGuardUntilRef.current) return;
+      void runTrackedPersistence(async () => {
+        await Promise.all([
+          persistenceService.saveCalculatorState(investorCalculatorState),
+          persistenceService.saveWorkspaceSnapshot({
+            id: DEFAULT_WORKSPACE_SNAPSHOT_KEY,
+            name: 'Auto-Saved Workspace',
+            activeTab,
+            selectedIds,
+            deploymentTarget,
+            hitlConfidence,
+            calculatorState: investorCalculatorState,
+          }),
+        ]);
       });
     }, 150);
     return () => window.clearTimeout(timer);
@@ -1432,33 +1646,49 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     deploymentTarget,
     hitlConfidence,
     persistenceService,
+    runTrackedPersistence,
   ]);
 
   // Automatically persist diligence preferences (currency, persona track, Data Room bookmarks) to IndexedDB
   useEffect(() => {
     if (!investorCalculatorHydrated) return;
+    if (Date.now() < clearGuardUntilRef.current) return;
     const timer = window.setTimeout(() => {
-      void persistenceService.saveDiligencePrefs({
-        personaTrack,
-        currency,
-        bookmarkedDocIds,
-      });
+      if (Date.now() < clearGuardUntilRef.current) return;
+      void runTrackedPersistence(() =>
+        persistenceService.saveDiligencePrefs({
+          personaTrack,
+          currency,
+          bookmarkedDocIds,
+        }),
+      );
     }, 150);
     return () => window.clearTimeout(timer);
-  }, [investorCalculatorHydrated, personaTrack, currency, bookmarkedDocIds, persistenceService]);
+  }, [
+    investorCalculatorHydrated,
+    personaTrack,
+    currency,
+    bookmarkedDocIds,
+    persistenceService,
+    runTrackedPersistence,
+  ]);
 
   // Automatically persist active tab and user session metadata to IndexedDB on every change
   useEffect(() => {
     if (!investorCalculatorHydrated) return;
+    if (Date.now() < clearGuardUntilRef.current) return;
     const timer = window.setTimeout(() => {
-      void persistenceService.saveUserSession({
-        activeTab,
-        selectedIds,
-        deploymentTarget,
-        hitlConfidence,
-        savedProposalsCount: savedProposals.length,
-        neuralCoreSystem: neuralCoreState.activeSystem,
-      });
+      if (Date.now() < clearGuardUntilRef.current) return;
+      void runTrackedPersistence(() =>
+        persistenceService.saveUserSession({
+          activeTab,
+          selectedIds,
+          deploymentTarget,
+          hitlConfidence,
+          savedProposalsCount: savedProposals.length,
+          neuralCoreSystem: neuralCoreState.activeSystem,
+        }),
+      );
     }, 150);
     return () => window.clearTimeout(timer);
   }, [
@@ -1470,6 +1700,7 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     savedProposals.length,
     neuralCoreState.activeSystem,
     persistenceService,
+    runTrackedPersistence,
   ]);
 
   // Flush latest calculator, workspace snapshot & user session immediately when the browser tab hides or reloads
@@ -1495,8 +1726,17 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
         neuralCoreSystem: neuralCoreState.activeSystem,
       });
     };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushNow();
+      }
+    };
     window.addEventListener('pagehide', flushNow);
-    return () => window.removeEventListener('pagehide', flushNow);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', flushNow);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [
     investorCalculatorHydrated,
     investorCalculatorState,
@@ -2305,6 +2545,14 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
         closeArPreview,
         loadCaseStudyStack,
         openBriefingSection,
+        syncStatus,
+        isOnline,
+        lastSyncedAt,
+        storageRevision,
+        forceSync,
+        getStorageMetrics,
+        clearLocalCachedData,
+        exportOfflineBackup,
       }}
     >
       {children}
