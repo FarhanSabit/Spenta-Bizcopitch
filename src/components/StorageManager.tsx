@@ -21,39 +21,55 @@ import {
 
 const STORE_METADATA: Record<
   PersistenceStoreName,
-  { label: string; description: string }
+  { label: string; shortLabel: string; description: string; barColor: string }
 > = {
   investorCalculator: {
     label: 'Active Investor Calculator',
+    shortLabel: 'Active Calculator',
     description: 'Current ROI, FX, dilution, and revenue-mix model parameters',
+    barColor: '#1F3863',
   },
   calculatorScenarios: {
     label: 'Saved Calculator Scenarios',
+    shortLabel: 'Scenarios',
     description: 'User-named financial modeling presets stored offline',
+    barColor: '#2563EB',
   },
   workspaceSnapshots: {
     label: 'Workspace Snapshots',
+    shortLabel: 'Workspace Snapshots',
     description: 'Auto-saved session checkpoint plus named stack snapshots',
+    barColor: '#1C6E46',
   },
   chartProjections: {
     label: 'Cached Chart Projections',
+    shortLabel: 'Chart Projections',
     description: 'Pre-computed 5-year P&L and MOIC series for offline charts',
+    barColor: '#0D9488',
   },
   userSession: {
     label: 'Active User Session',
+    shortLabel: 'User Session',
     description: 'Last active portal tab, stack selection, and deployment target',
+    barColor: '#D97706',
   },
   diligencePrefs: {
     label: 'Diligence Preferences',
+    shortLabel: 'Diligence Prefs',
     description: 'Investor persona track, currency mode, and Data Room bookmarks',
+    barColor: '#7C3AED',
   },
   investorFeedback: {
     label: 'Investor Feedback & Notes',
+    shortLabel: 'Investor Feedback',
     description: 'Section-level diligence notes, replies, and sentiment ratings',
+    barColor: '#DB2777',
   },
   contactInquiries: {
     label: 'Offline Founder Inquiries',
+    shortLabel: 'Founder Inquiries',
     description: 'Drafted SAFE term-sheet and founder outreach inquiries',
+    barColor: '#DC2626',
   },
 };
 
@@ -188,6 +204,24 @@ export function StorageManager() {
     if (!metrics) return 0;
     return metrics.scenarioEntries + metrics.workspaceEntries;
   }, [metrics]);
+
+  const sortedStoreBreakdown = useMemo(() => {
+    const stats = metrics?.storeStats ?? [];
+    const totalBytes = metrics?.estimatedPayloadBytes ?? 0;
+    return [...stats]
+      .sort((a, b) => b.bytes - a.bytes || b.count - a.count)
+      .map((row, index) => ({
+        ...row,
+        rank: index + 1,
+        sharePct: totalBytes > 0 ? (row.bytes / totalBytes) * 100 : 0,
+        meta: STORE_METADATA[row.store],
+      }));
+  }, [metrics]);
+
+  const topConsumer = useMemo(
+    () => sortedStoreBreakdown.find((item) => item.bytes > 0) ?? null,
+    [sortedStoreBreakdown],
+  );
 
   return (
     <section
@@ -439,61 +473,158 @@ export function StorageManager() {
         </div>
       </div>
 
-      {/* Store-by-Store IndexedDB Breakdown Table */}
-      <div className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#E4DFD6] dark:border-[#232B4A] flex flex-wrap items-center justify-between gap-2">
+      {/* Storage Breakdown by Item Type (Ranked Largest to Smallest) */}
+      <div
+        data-testid="storage-type-breakdown"
+        className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] overflow-hidden"
+      >
+        <div className="px-5 py-4 border-b border-[#E4DFD6] dark:border-[#232B4A] flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-bold text-[#16213A] dark:text-[#E7EBF5]">
-              IndexedDB Object Stores
+              Storage Breakdown by Item Type
             </h3>
             <p className="text-xs text-[#5F6576] dark:text-[#8E96B0] mt-0.5">
-              Live record counts and serialized storage footprint per store in{' '}
-              <span className="font-mono">{metrics?.dbName ?? 'spenta_sovereign_offline_db'}</span>.
+              Ranked by payload size in{' '}
+              <span className="font-mono">{metrics?.dbName ?? 'spenta_sovereign_offline_db'}</span>{' '}
+              so you can see which item types consume the most space.
             </p>
           </div>
-          <span className="text-xs font-mono tabular-nums text-[#5F6576] dark:text-[#8E96B0]">
-            {metrics?.totalEntries ?? 0} total records · {formatBytes(metrics?.estimatedPayloadBytes ?? 0)}
-          </span>
+          <div className="text-xs font-mono tabular-nums text-[#5F6576] dark:text-[#8E96B0] flex flex-wrap items-center gap-x-2 gap-y-1">
+            {topConsumer ? (
+              <>
+                <span data-testid="storage-top-consumer" className="font-semibold text-[#16213A] dark:text-[#E7EBF5]">
+                  Top consumer: {topConsumer.meta.shortLabel} ({topConsumer.sharePct.toFixed(1)}%)
+                </span>
+                <span aria-hidden="true">·</span>
+              </>
+            ) : null}
+            <span>
+              {metrics?.totalEntries ?? 0} entries · {formatBytes(metrics?.estimatedPayloadBytes ?? 0)}
+            </span>
+          </div>
+        </div>
+
+        {/* Proportional Allocation Bar Across Item Types */}
+        <div className="px-5 py-3.5 border-b border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4]/70 dark:bg-[#0F1529]/60 space-y-2.5">
+          <div
+            className="h-2.5 w-full rounded-full bg-[#E4DFD6] dark:bg-[#232B4A] overflow-hidden flex"
+            role="img"
+            aria-label={
+              topConsumer
+                ? `Storage allocation bar: top consumer is ${topConsumer.meta.shortLabel} at ${topConsumer.sharePct.toFixed(1)}%`
+                : 'Storage allocation bar: no cached entries'
+            }
+          >
+            {sortedStoreBreakdown
+              .filter((row) => row.bytes > 0)
+              .map((row) => (
+                <div
+                  key={row.store}
+                  style={{
+                    width: `${Math.max(row.sharePct, 1.5)}%`,
+                    backgroundColor: row.meta.barColor,
+                  }}
+                  title={`${row.meta.label}: ${formatBytes(row.bytes)} (${row.sharePct.toFixed(1)}%)`}
+                  className="h-full transition-all first:rounded-l-full last:rounded-r-full border-r border-white/40 dark:border-[#0B1020]/50 last:border-r-0"
+                />
+              ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-[#4A5568] dark:text-[#A4ADC6]">
+            {sortedStoreBreakdown.filter((row) => row.bytes > 0).length === 0 ? (
+              <span className="font-mono text-[#5F6576] dark:text-[#8E96B0]">
+                No stored entries across IndexedDB item types.
+              </span>
+            ) : (
+              sortedStoreBreakdown
+                .filter((row) => row.bytes > 0)
+                .map((row) => (
+                  <span
+                    key={row.store}
+                    className="inline-flex items-center gap-1.5 font-mono tabular-nums"
+                  >
+                    <span
+                      className="w-2 h-2 rounded-xs shrink-0"
+                      style={{ backgroundColor: row.meta.barColor }}
+                      aria-hidden="true"
+                    />
+                    <span className="font-sans font-medium text-[#16213A] dark:text-[#E7EBF5]">
+                      {row.meta.shortLabel}
+                    </span>
+                    <span className="text-[#5F6576] dark:text-[#8E96B0]">
+                      {row.sharePct.toFixed(1)}% ({formatBytes(row.bytes)})
+                    </span>
+                  </span>
+                ))
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] text-[11px] font-semibold text-[#5F6576] dark:text-[#8E96B0]">
-                <th className="py-2.5 px-5">Object Store</th>
-                <th className="py-2.5 px-4">Purpose</th>
-                <th className="py-2.5 px-4 text-right">Entries</th>
-                <th className="py-2.5 px-5 text-right">Payload Size</th>
+                <th className="py-2.5 pl-5 pr-2 w-12">Rank</th>
+                <th className="py-2.5 px-3">Item Type &amp; Store</th>
+                <th className="py-2.5 px-3">Purpose</th>
+                <th className="py-2.5 px-3 text-right">Entries</th>
+                <th className="py-2.5 px-4 w-44">Share of Space</th>
+                <th className="py-2.5 pl-3 pr-5 text-right">Size</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E4DFD6] dark:divide-[#232B4A] text-xs">
-              {(metrics?.storeStats ?? []).map((row) => {
-                const info = STORE_METADATA[row.store];
-                return (
-                  <tr
-                    key={row.store}
-                    className="hover:bg-[#FAF8F4] dark:hover:bg-[#0F1529]/70 transition-colors"
-                  >
-                    <td className="py-2.5 px-5">
-                      <div className="font-semibold text-[#16213A] dark:text-[#E7EBF5]">
-                        {info.label}
+              {sortedStoreBreakdown.map((row) => (
+                <tr
+                  key={row.store}
+                  data-testid={`storage-breakdown-row-${row.store}`}
+                  className="hover:bg-[#FAF8F4] dark:hover:bg-[#0F1529]/70 transition-colors"
+                >
+                  <td className="py-2.5 pl-5 pr-2 font-mono tabular-nums text-[11px] text-[#5F6576] dark:text-[#8E96B0]">
+                    #{row.rank}
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <div className="flex items-center gap-2 font-semibold text-[#16213A] dark:text-[#E7EBF5]">
+                      <span
+                        className="w-2 h-2 rounded-xs shrink-0"
+                        style={{ backgroundColor: row.meta.barColor }}
+                        aria-hidden="true"
+                      />
+                      <span>{row.meta.label}</span>
+                    </div>
+                    <div className="font-mono text-[11px] text-[#5F6576] dark:text-[#8E96B0] pl-4">
+                      {row.store}
+                    </div>
+                  </td>
+                  <td className="py-2.5 px-3 text-[#4A5568] dark:text-[#A4ADC6]">
+                    {row.meta.description}
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-mono tabular-nums font-semibold text-[#16213A] dark:text-[#E7EBF5]">
+                    {row.count}
+                  </td>
+                  <td className="py-2.5 px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 rounded-full bg-[#E4DFD6] dark:bg-[#232B4A] overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${row.bytes > 0 ? Math.max(row.sharePct, 3) : 0}%`,
+                            backgroundColor: row.meta.barColor,
+                          }}
+                        />
                       </div>
-                      <div className="font-mono text-[11px] text-[#5F6576] dark:text-[#8E96B0]">
-                        {row.store}
-                      </div>
-                    </td>
-                    <td className="py-2.5 px-4 text-[#4A5568] dark:text-[#A4ADC6]">
-                      {info.description}
-                    </td>
-                    <td className="py-2.5 px-4 text-right font-mono tabular-nums font-semibold text-[#16213A] dark:text-[#E7EBF5]">
-                      {row.count}
-                    </td>
-                    <td className="py-2.5 px-5 text-right font-mono tabular-nums text-[#5F6576] dark:text-[#8E96B0]">
-                      {formatBytes(row.bytes)}
-                    </td>
-                  </tr>
-                );
-              })}
+                      <span className="w-11 text-right font-mono tabular-nums text-[11px] text-[#5F6576] dark:text-[#8E96B0]">
+                        {row.sharePct.toFixed(1)}%
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-2.5 pl-3 pr-5 text-right font-mono tabular-nums text-[#16213A] dark:text-[#E7EBF5]">
+                    <div>{formatBytes(row.bytes)}</div>
+                    <div className="text-[10px] text-[#5F6576] dark:text-[#8E96B0]">
+                      {row.bytes.toLocaleString()} B
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
