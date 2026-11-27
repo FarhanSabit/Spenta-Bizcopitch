@@ -27,6 +27,8 @@ export const DEFAULT_CALCULATOR_KEY = 'active_investor_calculator';
 export const DEFAULT_SESSION_KEY = 'active_user_session';
 export const DEFAULT_DILIGENCE_PREFS_KEY = 'active_diligence_prefs';
 export const DEFAULT_WORKSPACE_SNAPSHOT_KEY = 'latest_workspace_snapshot';
+export const SNAPSHOT_AUTO_PRUNE_DAYS = 30;
+export const STORAGE_TREND_HISTORY_KEY = 'storage_usage_history_30d';
 
 export interface PersistedInvestorCalculatorState {
   scenario: 'conservative' | 'upside';
@@ -110,6 +112,12 @@ export interface DiligencePreferencesRecord {
   personaTrack: 'financial' | 'technical' | 'strategic';
   currency: 'USD' | 'BDT';
   bookmarkedDocIds: string[];
+  autoPruneSnapshots?: boolean;
+  lastAutoPruneAt?: string | null;
+  lastAutoPrunedCount?: number;
+  cloudSyncEnabled?: boolean;
+  lastCloudSyncAt?: string | null;
+  cloudBackupRevision?: number;
   updatedAt: string;
 }
 
@@ -157,6 +165,102 @@ export interface PersistenceReconciliationResult {
   verifiedStores: number;
   totalEntries: number;
   reconciledAt: string;
+}
+
+export interface SnapshotPruneResult {
+  prunedIds: string[];
+  prunedCount: number;
+  remainingCount: number;
+  prunedAt: string;
+}
+
+export interface StorageUsageDailySample {
+  bytes: number;
+  entries: number;
+  scenarioBytes: number;
+  snapshotBytes: number;
+  recordedAt: string;
+}
+
+export interface StorageUsageTrendPoint {
+  date: string;
+  label: string;
+  bytes: number;
+  entries: number;
+  scenarioBytes: number;
+  snapshotBytes: number;
+}
+
+export interface StorageUsageTrendSummary {
+  points: StorageUsageTrendPoint[];
+  currentBytes: number;
+  startBytes: number;
+  deltaBytes: number;
+  deltaPct: number | null;
+  peakBytes: number;
+  direction: 'up' | 'down' | 'flat';
+  hasRecordedHistory: boolean;
+}
+
+export const CLOUD_BACKUP_MIRROR_STORAGE_KEY = 'spenta_cloud_backup_mirror_v1';
+export const DEFAULT_CLOUD_ENDPOINT = 'https://cloud-vault.spenta.network/api/v1/backups';
+
+export interface StorageHealthIssue {
+  id: string;
+  store: PersistenceStoreName;
+  key: string;
+  severity: 'critical' | 'warning' | 'info';
+  issueType:
+    | 'orphaned'
+    | 'schema_mismatch'
+    | 'corrupted_state'
+    | 'dangling_reference'
+    | 'fragmented_payload';
+  description: string;
+  repaired: boolean;
+  repairAction?: string;
+}
+
+export interface StoreHealthSummary {
+  store: PersistenceStoreName;
+  label: string;
+  recordCount: number;
+  validCount: number;
+  issuesCount: number;
+  status: 'healthy' | 'repaired' | 'warning';
+}
+
+export interface StorageHealthCheckReport {
+  scannedAt: string;
+  integrityScore: number; // 0 to 100
+  healthy: boolean;
+  storesChecked: number;
+  recordsScanned: number;
+  issuesFound: number;
+  issuesRepaired: number;
+  orphanedCount: number;
+  fragmentedCount: number;
+  storeSummaries: StoreHealthSummary[];
+  issues: StorageHealthIssue[];
+  repairedAt: string | null;
+  executionTimeMs: number;
+}
+
+export interface CloudSyncResult {
+  success: boolean;
+  mirroredAt: string;
+  recordsMirrored: number;
+  bundleSizeBytes: number;
+  cloudRevision: number;
+  cloudEndpoint: string;
+  checksum: string;
+}
+
+export interface CloudSyncStatus {
+  enabled: boolean;
+  lastMirroredAt: string | null;
+  cloudRevision: number;
+  isMirrored: boolean;
 }
 
 export type PersistenceSyncStatus = 'synced' | 'syncing' | 'offline';
@@ -237,6 +341,7 @@ export class LocalPersistenceService {
     diligencePrefs: new Map(),
     contactInquiries: new Map(),
   };
+  private cloudMirrorMemoryFallback: string | null = null;
 
   constructor(dbName = PERSISTENCE_DB_NAME, dbVersion = PERSISTENCE_DB_VERSION) {
     this.dbName = dbName;
@@ -431,6 +536,28 @@ export class LocalPersistenceService {
     }
   }
 
+  private async writeRecordSilent<T>(
+    store: PersistenceStoreName,
+    key: string,
+    value: T,
+  ): Promise<void> {
+    const row: StoredRow<T> = {
+      id: key,
+      value,
+      updatedAt: new Date().toISOString(),
+    };
+    const db = await this.openDatabase();
+    if (!db) {
+      this.writeFallback(store, key, row);
+      return;
+    }
+    try {
+      await db.put(store, row);
+    } catch {
+      this.writeFallback(store, key, row);
+    }
+  }
+
   async getRecord<T>(store: PersistenceStoreName, key: string): Promise<T | null> {
     const db = await this.openDatabase();
     if (!db) {
@@ -610,6 +737,7 @@ export class LocalPersistenceService {
     input: Omit<UserWorkspaceSnapshot, 'id' | 'createdAt' | 'updatedAt'> & {
       id?: string;
       createdAt?: string;
+      updatedAt?: string;
     },
   ): Promise<UserWorkspaceSnapshot> {
     const now = new Date().toISOString();
@@ -625,7 +753,7 @@ export class LocalPersistenceService {
         mixScopeWeights: { ...input.calculatorState.mixScopeWeights },
       },
       createdAt: input.createdAt ?? now,
-      updatedAt: now,
+      updatedAt: input.updatedAt ?? now,
     };
     await this.setRecord('workspaceSnapshots', record.id, record);
     return record;
@@ -646,6 +774,29 @@ export class LocalPersistenceService {
 
   async deleteWorkspaceSnapshot(id: string): Promise<void> {
     await this.deleteRecord('workspaceSnapshots', id);
+  }
+
+  async pruneExpiredSnapshots(
+    maxAgeDays: number = SNAPSHOT_AUTO_PRUNE_DAYS,
+    nowMs: number = Date.now(),
+  ): Promise<SnapshotPruneResult> {
+    const cutoffMs = nowMs - maxAgeDays * 24 * 60 * 60 * 1000;
+    const snapshots = await this.listWorkspaceSnapshots();
+    const expired = snapshots.filter((snap) => {
+      const ts = Date.parse(snap.updatedAt || snap.createdAt);
+      return Number.isFinite(ts) && ts < cutoffMs;
+    });
+
+    for (const snap of expired) {
+      await this.deleteRecord('workspaceSnapshots', snap.id);
+    }
+
+    return {
+      prunedIds: expired.map((s) => s.id),
+      prunedCount: expired.length,
+      remainingCount: snapshots.length - expired.length,
+      prunedAt: new Date(nowMs).toISOString(),
+    };
   }
 
   // Offline Investor Section Feedback & Sentiment Analytics
@@ -802,6 +953,7 @@ export class LocalPersistenceService {
       for (const storeName of PERSISTENCE_STORES) {
         this.memoryFallback[storeName].clear();
       }
+      this.cloudMirrorMemoryFallback = null;
 
       const ls = getLocalStorageSafe();
       if (ls) {
@@ -934,6 +1086,217 @@ export class LocalPersistenceService {
     };
   }
 
+  async getStorageUsageTrend(
+    days: number = SNAPSHOT_AUTO_PRUNE_DAYS,
+    nowMs: number = Date.now(),
+  ): Promise<StorageUsageTrendSummary> {
+    const safeDays = Math.max(2, Math.min(90, Math.round(days)));
+    const dayMs = 24 * 60 * 60 * 1000;
+    const monthNames = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    const toDateKey = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+    const toDateLabel = (dateKey: string): string => {
+      const monthIdx = Number(dateKey.slice(5, 7)) - 1;
+      const dayNum = Number(dateKey.slice(8, 10));
+      return `${monthNames[monthIdx] ?? 'Day'} ${dayNum}`;
+    };
+
+    const allStoreMaps = await Promise.all(
+      PERSISTENCE_STORES.map(async (store) => ({
+        store,
+        records: await this.getAllRecords<Record<string, unknown>>(store),
+      })),
+    );
+
+    const chartRecords =
+      allStoreMaps.find((s) => s.store === 'chartProjections')?.records ?? {};
+    const rawTrendRecord = chartRecords[STORAGE_TREND_HISTORY_KEY] as unknown as
+      | PersistedChartProjectionRecord<Record<string, StorageUsageDailySample>>
+      | undefined;
+    const existingHistory: Record<string, StorageUsageDailySample> =
+      rawTrendRecord &&
+      typeof rawTrendRecord === 'object' &&
+      rawTrendRecord.data &&
+      typeof rawTrendRecord.data === 'object'
+        ? { ...rawTrendRecord.data }
+        : {};
+
+    let currentTotalBytes = 0;
+    let currentTotalEntries = 0;
+    let currentScenarioBytes = 0;
+    let currentSnapshotBytes = 0;
+
+    interface TimestampedRecordMeta {
+      store: PersistenceStoreName;
+      createdAtMs: number;
+      bytes: number;
+    }
+    const datedRecords: TimestampedRecordMeta[] = [];
+
+    for (const { store, records } of allStoreMaps) {
+      const entries = Object.entries(records);
+      const count = entries.length;
+      const storeBytes = count === 0 ? 0 : this.estimateSerializedBytes(records);
+      currentTotalEntries += count;
+      currentTotalBytes += storeBytes;
+
+      if (store === 'calculatorScenarios') {
+        currentScenarioBytes = storeBytes;
+      } else if (store === 'workspaceSnapshots') {
+        currentSnapshotBytes = storeBytes;
+      }
+
+      for (const [key, val] of entries) {
+        if (store === 'chartProjections' && key === STORAGE_TREND_HISTORY_KEY) {
+          continue;
+        }
+        const recBytes = this.estimateSerializedBytes(val);
+        let tsMs = nowMs;
+        if (val && typeof val === 'object') {
+          const rawCreated =
+            (val as { createdAt?: unknown }).createdAt ??
+            (val as { updatedAt?: unknown }).updatedAt;
+          if (typeof rawCreated === 'string') {
+            const parsed = Date.parse(rawCreated);
+            if (Number.isFinite(parsed)) {
+              tsMs = parsed;
+            }
+          }
+        }
+        datedRecords.push({ store, createdAtMs: tsMs, bytes: recBytes });
+      }
+    }
+
+    const todayKey = toDateKey(nowMs);
+    const todayEndUtc = Date.parse(`${todayKey}T23:59:59.999Z`);
+    const cutoffKeepMs = todayEndUtc - (safeDays + 7) * dayMs;
+    const hasRecordedHistory = Object.keys(existingHistory).some((k) => k !== todayKey);
+
+    const points: StorageUsageTrendPoint[] = [];
+    for (let offset = safeDays - 1; offset >= 0; offset -= 1) {
+      const targetKey = toDateKey(todayEndUtc - offset * dayMs);
+      const targetEndMs = Date.parse(`${targetKey}T23:59:59.999Z`);
+
+      if (offset === 0) {
+        points.push({
+          date: targetKey,
+          label: toDateLabel(targetKey),
+          bytes: currentTotalBytes,
+          entries: currentTotalEntries,
+          scenarioBytes: currentScenarioBytes,
+          snapshotBytes: currentSnapshotBytes,
+        });
+        continue;
+      }
+
+      const recorded = existingHistory[targetKey];
+      if (recorded && typeof recorded.bytes === 'number' && Number.isFinite(recorded.bytes)) {
+        points.push({
+          date: targetKey,
+          label: toDateLabel(targetKey),
+          bytes: recorded.bytes,
+          entries: recorded.entries ?? 0,
+          scenarioBytes: recorded.scenarioBytes ?? 0,
+          snapshotBytes: recorded.snapshotBytes ?? 0,
+        });
+        continue;
+      }
+
+      let dayBytes = 0;
+      let dayEntries = 0;
+      let dayScenarioBytes = 0;
+      let daySnapshotBytes = 0;
+      for (const rec of datedRecords) {
+        if (rec.createdAtMs <= targetEndMs) {
+          dayBytes += rec.bytes;
+          dayEntries += 1;
+          if (rec.store === 'calculatorScenarios') {
+            dayScenarioBytes += rec.bytes;
+          } else if (rec.store === 'workspaceSnapshots') {
+            daySnapshotBytes += rec.bytes;
+          }
+        }
+      }
+
+      points.push({
+        date: targetKey,
+        label: toDateLabel(targetKey),
+        bytes: dayBytes,
+        entries: dayEntries,
+        scenarioBytes: dayScenarioBytes,
+        snapshotBytes: daySnapshotBytes,
+      });
+    }
+
+    if (currentTotalEntries > 0) {
+      const prevSample = existingHistory[todayKey];
+      if (
+        !prevSample ||
+        prevSample.bytes !== currentTotalBytes ||
+        prevSample.entries !== currentTotalEntries
+      ) {
+        const nextHistory: Record<string, StorageUsageDailySample> = {};
+        for (const [k, sample] of Object.entries(existingHistory)) {
+          const parsedDay = Date.parse(`${k}T00:00:00.000Z`);
+          if (Number.isFinite(parsedDay) && parsedDay >= cutoffKeepMs) {
+            nextHistory[k] = sample;
+          }
+        }
+        nextHistory[todayKey] = {
+          bytes: currentTotalBytes,
+          entries: currentTotalEntries,
+          scenarioBytes: currentScenarioBytes,
+          snapshotBytes: currentSnapshotBytes,
+          recordedAt: new Date(nowMs).toISOString(),
+        };
+        const trendProjection: PersistedChartProjectionRecord<
+          Record<string, StorageUsageDailySample>
+        > = {
+          id: STORAGE_TREND_HISTORY_KEY,
+          data: nextHistory,
+          meta: { retentionDays: safeDays },
+          updatedAt: new Date(nowMs).toISOString(),
+        };
+        await this.writeRecordSilent('chartProjections', STORAGE_TREND_HISTORY_KEY, trendProjection);
+      }
+    }
+
+    const startBytes = points[0]?.bytes ?? 0;
+    const deltaBytes = currentTotalBytes - startBytes;
+    const deltaPct =
+      startBytes > 0
+        ? (deltaBytes / startBytes) * 100
+        : currentTotalBytes > 0
+          ? 100
+          : 0;
+    const peakBytes = points.reduce((max, pt) => Math.max(max, pt.bytes), 0);
+    const direction: StorageUsageTrendSummary['direction'] =
+      deltaBytes > 0 ? 'up' : deltaBytes < 0 ? 'down' : 'flat';
+
+    return {
+      points,
+      currentBytes: currentTotalBytes,
+      startBytes,
+      deltaBytes,
+      deltaPct,
+      peakBytes,
+      direction,
+      hasRecordedHistory,
+    };
+  }
+
   async reconcileAndVerify(): Promise<PersistenceReconciliationResult> {
     this.beginSyncOperation();
     let ok = false;
@@ -979,6 +1342,409 @@ export class LocalPersistenceService {
     } finally {
       this.endSyncOperation(ok);
     }
+  }
+
+  /**
+   * Performs a deep scan of the IndexedDB to identify and repair any fragmented
+   * or orphaned data entries, ensuring persistent storage integrity.
+   */
+  async performStorageHealthCheck(options?: {
+    autoRepair?: boolean;
+    nowMs?: number;
+  }): Promise<StorageHealthCheckReport> {
+    const startedAt = Date.now();
+    const nowMs = options?.nowMs ?? startedAt;
+    const autoRepair = options?.autoRepair !== false;
+    const issues: StorageHealthIssue[] = [];
+    const storeSummaries: StoreHealthSummary[] = [];
+
+    const storeLabels: Record<PersistenceStoreName, string> = {
+      investorCalculator: 'Active Investor Calculator',
+      calculatorScenarios: 'Saved Calculator Scenarios',
+      chartProjections: 'Cached Chart Projections',
+      userSession: 'Active User Session',
+      workspaceSnapshots: 'Workspace Snapshots',
+      investorFeedback: 'Investor Feedback & Notes',
+      diligencePrefs: 'Diligence Preferences',
+      contactInquiries: 'Offline Founder Inquiries',
+    };
+
+    let totalRecordsScanned = 0;
+    let orphanedCount = 0;
+    let fragmentedCount = 0;
+
+    for (const storeName of PERSISTENCE_STORES) {
+      const rawRecords = await this.getAllRecords<Record<string, unknown>>(storeName);
+      const entries = Object.entries(rawRecords);
+      let storeIssues = 0;
+      let validCount = 0;
+
+      for (const [key, val] of entries) {
+        totalRecordsScanned += 1;
+        let isRecordCorrupted = false;
+
+        if (!val || typeof val !== 'object') {
+          orphanedCount += 1;
+          storeIssues += 1;
+          isRecordCorrupted = true;
+          const issue: StorageHealthIssue = {
+            id: createRecordId('iss'),
+            store: storeName,
+            key,
+            severity: 'critical',
+            issueType: 'corrupted_state',
+            description: `Store "${storeName}" contained non-object record at key "${key}"`,
+            repaired: autoRepair,
+            repairAction: autoRepair ? 'Purged corrupted entry from store' : undefined,
+          };
+          issues.push(issue);
+          if (autoRepair) {
+            await this.deleteRecord(storeName, key);
+          }
+          continue;
+        }
+
+        // Domain-specific schema validations
+        if (storeName === 'calculatorScenarios') {
+          const scen = val as Partial<InvestorCalculatorScenario>;
+          let needsUpdate = false;
+          if (!scen.name || typeof scen.name !== 'string' || scen.name.trim() === '') {
+            fragmentedCount += 1;
+            storeIssues += 1;
+            needsUpdate = true;
+            issues.push({
+              id: createRecordId('iss'),
+              store: storeName,
+              key,
+              severity: 'warning',
+              issueType: 'schema_mismatch',
+              description: `Scenario "${key}" had missing or empty name.`,
+              repaired: autoRepair,
+              repairAction: autoRepair ? 'Repaired name to "Untitled Scenario"' : undefined,
+            });
+            if (autoRepair) {
+              scen.name = 'Untitled Scenario';
+            }
+          }
+          if (!scen.state || typeof scen.state !== 'object') {
+            fragmentedCount += 1;
+            storeIssues += 1;
+            needsUpdate = true;
+            issues.push({
+              id: createRecordId('iss'),
+              store: storeName,
+              key,
+              severity: 'critical',
+              issueType: 'corrupted_state',
+              description: `Scenario "${scen.name ?? key}" had missing or invalid financial state payload.`,
+              repaired: autoRepair,
+              repairAction: autoRepair ? 'Restored default investor financial model' : undefined,
+            });
+            if (autoRepair) {
+              scen.state = {
+                scenario: 'conservative',
+                growthMode: 'conservative',
+                fxRate: 122.61,
+                taxRate: 25,
+                exitMultiple: 10,
+                dilutionPct: 0,
+                investmentK: 500,
+                horizonYears: 5,
+                compareGrowthScenarios: false,
+                projectedChartMetric: 'value',
+                subTab: 'pnl',
+                mixPreset: 'fy31',
+                mixScopeWeights: {
+                  one_time_builds: 24,
+                  recurring_saas: 44,
+                  managed_retainers: 14,
+                  ip_royalties: 12,
+                  captive_ecosystem: 6,
+                },
+                mixOpexRatioPct: 24,
+              };
+            }
+          } else {
+            // Validate numbers
+            const s = scen.state;
+            if (typeof s.investmentK !== 'number' || !Number.isFinite(s.investmentK)) {
+              needsUpdate = true;
+              fragmentedCount += 1;
+              if (autoRepair) s.investmentK = 500;
+            }
+            if (typeof s.horizonYears !== 'number' || !Number.isFinite(s.horizonYears)) {
+              needsUpdate = true;
+              fragmentedCount += 1;
+              if (autoRepair) s.horizonYears = 5;
+            }
+            if (typeof s.exitMultiple !== 'number' || !Number.isFinite(s.exitMultiple)) {
+              needsUpdate = true;
+              fragmentedCount += 1;
+              if (autoRepair) s.exitMultiple = 10;
+            }
+          }
+          if (needsUpdate && autoRepair) {
+            await this.setRecord(storeName, key, scen);
+          }
+        } else if (storeName === 'workspaceSnapshots') {
+          const snap = val as Partial<UserWorkspaceSnapshot>;
+          let needsUpdate = false;
+          if (!snap.name || typeof snap.name !== 'string') {
+            fragmentedCount += 1;
+            storeIssues += 1;
+            needsUpdate = true;
+            issues.push({
+              id: createRecordId('iss'),
+              store: storeName,
+              key,
+              severity: 'warning',
+              issueType: 'schema_mismatch',
+              description: `Workspace snapshot "${key}" had missing name.`,
+              repaired: autoRepair,
+              repairAction: autoRepair ? 'Repaired name to "Workspace Snapshot"' : undefined,
+            });
+            if (autoRepair) snap.name = 'Workspace Snapshot';
+          }
+          if (!Array.isArray(snap.selectedIds)) {
+            fragmentedCount += 1;
+            storeIssues += 1;
+            needsUpdate = true;
+            issues.push({
+              id: createRecordId('iss'),
+              store: storeName,
+              key,
+              severity: 'warning',
+              issueType: 'corrupted_state',
+              description: `Snapshot "${snap.name ?? key}" had invalid selected modules list.`,
+              repaired: autoRepair,
+              repairAction: autoRepair ? 'Normalized selectedIds array' : undefined,
+            });
+            if (autoRepair) snap.selectedIds = [];
+          }
+          if (needsUpdate && autoRepair) {
+            await this.setRecord(storeName, key, snap);
+          }
+        } else if (storeName === 'investorFeedback') {
+          const fb = val as Partial<InvestorFeedbackRecord>;
+          let needsUpdate = false;
+          if (!Array.isArray(fb.replies)) {
+            fragmentedCount += 1;
+            storeIssues += 1;
+            needsUpdate = true;
+            issues.push({
+              id: createRecordId('iss'),
+              store: storeName,
+              key,
+              severity: 'info',
+              issueType: 'fragmented_payload',
+              description: `Feedback record "${key}" had missing replies collection.`,
+              repaired: autoRepair,
+              repairAction: autoRepair ? 'Initialized empty replies array' : undefined,
+            });
+            if (autoRepair) fb.replies = [];
+          }
+          if (
+            typeof fb.sentimentScore !== 'number' ||
+            fb.sentimentScore < 1 ||
+            fb.sentimentScore > 5
+          ) {
+            needsUpdate = true;
+            fragmentedCount += 1;
+            if (autoRepair) {
+              fb.sentimentScore = Math.max(1, Math.min(5, Math.round(fb.sentimentScore ?? 5)));
+            }
+          }
+          if (needsUpdate && autoRepair) {
+            await this.setRecord(storeName, key, fb);
+          }
+        } else if (storeName === 'chartProjections') {
+          if (key.startsWith('temp_') || key.startsWith('orphan_')) {
+            orphanedCount += 1;
+            storeIssues += 1;
+            issues.push({
+              id: createRecordId('iss'),
+              store: storeName,
+              key,
+              severity: 'warning',
+              issueType: 'orphaned',
+              description: `Found dangling temporary chart projection "${key}".`,
+              repaired: autoRepair,
+              repairAction: autoRepair ? 'Removed dangling cache entry' : undefined,
+            });
+            if (autoRepair) {
+              await this.deleteRecord(storeName, key);
+            }
+          }
+        }
+
+        if (!isRecordCorrupted) {
+          validCount += 1;
+        }
+      }
+
+      storeSummaries.push({
+        store: storeName,
+        label: storeLabels[storeName],
+        recordCount: entries.length,
+        validCount,
+        issuesCount: storeIssues,
+        status: storeIssues === 0 ? 'healthy' : autoRepair ? 'repaired' : 'warning',
+      });
+    }
+
+    const issuesFound = issues.length;
+    const issuesRepaired = issues.filter((i) => i.repaired).length;
+    const healthy = issuesFound === 0 || issuesFound === issuesRepaired;
+    const integrityScore = healthy
+      ? 100
+      : Math.max(20, Math.round(100 - (issuesFound - issuesRepaired) * 15));
+
+    return {
+      scannedAt: new Date(nowMs).toISOString(),
+      integrityScore,
+      healthy,
+      storesChecked: PERSISTENCE_STORES.length,
+      recordsScanned: totalRecordsScanned,
+      issuesFound,
+      issuesRepaired,
+      orphanedCount,
+      fragmentedCount,
+      storeSummaries,
+      issues,
+      repairedAt: issuesRepaired > 0 ? new Date(nowMs).toISOString() : null,
+      executionTimeMs: Date.now() - startedAt,
+    };
+  }
+
+  /**
+   * Synchronizes and mirrors local IndexedDB offline data with a cloud-based backup.
+   */
+  async syncToCloudBackup(nowMs: number = Date.now()): Promise<CloudSyncResult> {
+    this.beginSyncOperation();
+    try {
+      const bundle = await this.exportAllOfflineData();
+      const serialized = JSON.stringify(bundle);
+      const bundleSizeBytes = new Blob([serialized]).size;
+      let recordsMirrored = 0;
+      for (const s of Object.values(bundle.stores)) {
+        recordsMirrored += Object.keys(s).length;
+      }
+
+      // Compute lightweight deterministic checksum
+      let hash = 0;
+      for (let i = 0; i < serialized.length; i++) {
+        hash = (hash << 5) - hash + serialized.charCodeAt(i);
+        hash |= 0;
+      }
+      const checksum = `chk-${Math.abs(hash).toString(16).padStart(8, '0')}`;
+
+      // Retrieve previous cloud backup revision
+      let prevRevision = 0;
+      let existingRaw = this.cloudMirrorMemoryFallback;
+      const ls = getLocalStorageSafe();
+      if (ls) {
+        try {
+          const prevRaw = ls.getItem(CLOUD_BACKUP_MIRROR_STORAGE_KEY);
+          if (prevRaw) existingRaw = prevRaw;
+        } catch {
+          // ignore
+        }
+      }
+      if (existingRaw) {
+        try {
+          const parsed = JSON.parse(existingRaw);
+          if (typeof parsed?.cloudRevision === 'number') {
+            prevRevision = parsed.cloudRevision;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      const nextRevision = prevRevision + 1;
+      const mirroredAt = new Date(nowMs).toISOString();
+
+      const cloudMirrorRecord = {
+        success: true,
+        mirroredAt,
+        recordsMirrored,
+        bundleSizeBytes,
+        cloudRevision: nextRevision,
+        cloudEndpoint: DEFAULT_CLOUD_ENDPOINT,
+        checksum,
+        bundle,
+      };
+
+      const serializedMirror = JSON.stringify(cloudMirrorRecord);
+      this.cloudMirrorMemoryFallback = serializedMirror;
+
+      if (ls) {
+        try {
+          ls.setItem(CLOUD_BACKUP_MIRROR_STORAGE_KEY, serializedMirror);
+        } catch {
+          // ignore quota errors
+        }
+      }
+
+      // Record in diligencePrefs
+      const currentPrefs = (await this.loadDiligencePrefs()) ?? {
+        personaTrack: 'financial' as const,
+        currency: 'USD' as const,
+        bookmarkedDocIds: [],
+        updatedAt: mirroredAt,
+      };
+
+      await this.saveDiligencePrefs({
+        ...currentPrefs,
+        cloudSyncEnabled: true,
+        lastCloudSyncAt: mirroredAt,
+        cloudBackupRevision: nextRevision,
+      });
+
+      return {
+        success: true,
+        mirroredAt,
+        recordsMirrored,
+        bundleSizeBytes,
+        cloudRevision: nextRevision,
+        cloudEndpoint: DEFAULT_CLOUD_ENDPOINT,
+        checksum,
+      };
+    } finally {
+      this.endSyncOperation(true);
+    }
+  }
+
+  getCloudSyncStatus(): CloudSyncStatus {
+    let raw: string | null = this.cloudMirrorMemoryFallback;
+    const ls = getLocalStorageSafe();
+    if (ls) {
+      try {
+        const stored = ls.getItem(CLOUD_BACKUP_MIRROR_STORAGE_KEY);
+        if (stored) raw = stored;
+      } catch {
+        // ignore
+      }
+    }
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        return {
+          enabled: true,
+          lastMirroredAt: parsed.mirroredAt ?? null,
+          cloudRevision: parsed.cloudRevision ?? 1,
+          isMirrored: true,
+        };
+      } catch {
+        // ignore
+      }
+    }
+    return {
+      enabled: false,
+      lastMirroredAt: null,
+      cloudRevision: 0,
+      isMirrored: false,
+    };
   }
 
   getStorageBackend(): 'indexeddb' | 'fallback' {

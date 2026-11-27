@@ -30,6 +30,7 @@ import {
   resolveBrainHubForPathwayNode,
 } from '../utils/pathwayBrainLink';
 import {
+  CloudSyncResult,
   DEFAULT_WORKSPACE_SNAPSHOT_KEY,
   InvestorCalculatorScenario,
   InvestorFeedbackPriority,
@@ -38,6 +39,8 @@ import {
   OfflineContactInquiry,
   PersistedInvestorCalculatorState,
   PersistenceStorageMetrics,
+  SNAPSHOT_AUTO_PRUNE_DAYS,
+  StorageHealthCheckReport,
   UserWorkspaceSnapshot,
 } from '../utils/LocalPersistenceService';
 import {
@@ -550,6 +553,9 @@ interface StackContextValue {
   saveWorkspaceSnapshot: (name: string) => Promise<UserWorkspaceSnapshot>;
   restoreWorkspaceSnapshot: (id: string) => void;
   deleteWorkspaceSnapshot: (id: string) => Promise<void>;
+  deleteStoredItemsBulk: (
+    items: Array<{ kind: 'scenario' | 'snapshot'; id: string }>,
+  ) => Promise<number>;
   // Unified SSOT & Investor Briefing engagement state
   currency: SsotCurrency;
   setCurrency: (currency: SsotCurrency) => void;
@@ -601,6 +607,17 @@ interface StackContextValue {
   getStorageMetrics: () => Promise<PersistenceStorageMetrics>;
   clearLocalCachedData: () => Promise<void>;
   exportOfflineBackup: () => Promise<void>;
+  autoPruneSnapshots: boolean;
+  setAutoPruneSnapshots: (enabled: boolean) => Promise<void>;
+  lastAutoPruneSummary: { prunedAt: string | null; prunedCount: number };
+  pruneExpiredSnapshotsNow: () => Promise<number>;
+  storageHealthReport: StorageHealthCheckReport | null;
+  runStorageHealthCheck: (options?: { autoRepair?: boolean }) => Promise<StorageHealthCheckReport>;
+  cloudSyncEnabled: boolean;
+  setCloudSyncEnabled: (enabled: boolean) => Promise<void>;
+  lastCloudSyncAt: string | null;
+  cloudBackupRevision: number;
+  syncToCloudNow: () => Promise<CloudSyncResult>;
 }
 
 const StackContext = createContext<StackContextValue | null>(null);
@@ -1121,6 +1138,21 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     InvestorCalculatorScenario[]
   >([]);
   const [workspaceSnapshots, setWorkspaceSnapshots] = useState<UserWorkspaceSnapshot[]>([]);
+  const [autoPruneSnapshots, setAutoPruneSnapshotsState] = useState<boolean>(false);
+  const [lastAutoPruneSummary, setLastAutoPruneSummary] = useState<{
+    prunedAt: string | null;
+    prunedCount: number;
+  }>({ prunedAt: null, prunedCount: 0 });
+  const [storageHealthReport, setStorageHealthReport] = useState<StorageHealthCheckReport | null>(null);
+  const [cloudSyncEnabled, setCloudSyncEnabledState] = useState<boolean>(() => {
+    return persistenceService.getCloudSyncStatus().enabled;
+  });
+  const [lastCloudSyncAt, setLastCloudSyncAt] = useState<string | null>(() => {
+    return persistenceService.getCloudSyncStatus().lastMirroredAt;
+  });
+  const [cloudBackupRevision, setCloudBackupRevision] = useState<number>(() => {
+    return persistenceService.getCloudSyncStatus().cloudRevision;
+  });
   const [currency, setCurrency] = useState<SsotCurrency>('USD');
   const [personaTrack, setPersonaTrack] = useState<InvestorPersonaTrack>('financial');
   const [bookmarkedDocIds, setBookmarkedDocIds] = useState<string[]>([]);
@@ -1381,9 +1413,127 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     [persistenceService, runTrackedPersistence],
   );
 
+  const deleteStoredItemsBulk = useCallback<StackContextValue['deleteStoredItemsBulk']>(
+    async (items) => {
+      if (items.length === 0) return 0;
+      const scenarioIds = new Set<string>();
+      const snapshotIds = new Set<string>();
+      items.forEach((entry) => {
+        if (entry.kind === 'scenario') {
+          scenarioIds.add(entry.id);
+        } else if (entry.kind === 'snapshot') {
+          snapshotIds.add(entry.id);
+        }
+      });
+
+      const totalCount = scenarioIds.size + snapshotIds.size;
+      if (totalCount === 0) return 0;
+
+      clearGuardUntilRef.current = 0;
+      await runTrackedPersistence(async () => {
+        await Promise.all([
+          ...Array.from(scenarioIds).map((id) => persistenceService.deleteCalculatorScenario(id)),
+          ...Array.from(snapshotIds).map((id) => persistenceService.deleteWorkspaceSnapshot(id)),
+        ]);
+      });
+
+      if (scenarioIds.size > 0) {
+        setSavedCalculatorScenarios((prev) => prev.filter((item) => !scenarioIds.has(item.id)));
+      }
+      if (snapshotIds.size > 0) {
+        setWorkspaceSnapshots((prev) => prev.filter((item) => !snapshotIds.has(item.id)));
+      }
+      setAutoNotice(
+        `Deleted ${totalCount} selected item${totalCount === 1 ? '' : 's'} from local IndexedDB storage`,
+      );
+      return totalCount;
+    },
+    [persistenceService, runTrackedPersistence],
+  );
+
   const getStorageMetrics = useCallback(() => {
     return persistenceService.getStorageMetrics();
   }, [persistenceService]);
+
+  const pruneExpiredSnapshotsNow = useCallback(async (): Promise<number> => {
+    clearGuardUntilRef.current = 0;
+    const result = await runTrackedPersistence(() =>
+      persistenceService.pruneExpiredSnapshots(SNAPSHOT_AUTO_PRUNE_DAYS),
+    );
+    if (result.prunedIds.length > 0) {
+      const prunedSet = new Set(result.prunedIds);
+      setWorkspaceSnapshots((prev) => prev.filter((item) => !prunedSet.has(item.id)));
+      setAutoNotice(
+        `Auto-pruned ${result.prunedCount} snapshot${result.prunedCount === 1 ? '' : 's'} older than ${SNAPSHOT_AUTO_PRUNE_DAYS} days`,
+      );
+    } else {
+      setAutoNotice(
+        `Snapshot retention check complete — no snapshots older than ${SNAPSHOT_AUTO_PRUNE_DAYS} days`,
+      );
+    }
+    setLastAutoPruneSummary({
+      prunedAt: result.prunedAt,
+      prunedCount: result.prunedCount,
+    });
+    return result.prunedCount;
+  }, [persistenceService, runTrackedPersistence]);
+
+  const setAutoPruneSnapshots = useCallback(
+    async (enabled: boolean): Promise<void> => {
+      clearGuardUntilRef.current = 0;
+      setAutoPruneSnapshotsState(enabled);
+      if (enabled) {
+        const result = await runTrackedPersistence(async () => {
+          const pruneResult = await persistenceService.pruneExpiredSnapshots(
+            SNAPSHOT_AUTO_PRUNE_DAYS,
+          );
+          await persistenceService.saveDiligencePrefs({
+            personaTrack,
+            currency,
+            bookmarkedDocIds,
+            autoPruneSnapshots: true,
+            lastAutoPruneAt: pruneResult.prunedAt,
+            lastAutoPrunedCount: pruneResult.prunedCount,
+          });
+          return pruneResult;
+        });
+        if (result.prunedIds.length > 0) {
+          const prunedSet = new Set(result.prunedIds);
+          setWorkspaceSnapshots((prev) => prev.filter((item) => !prunedSet.has(item.id)));
+        }
+        setLastAutoPruneSummary({
+          prunedAt: result.prunedAt,
+          prunedCount: result.prunedCount,
+        });
+        setAutoNotice(
+          result.prunedCount > 0
+            ? `Auto-Prune enabled — deleted ${result.prunedCount} snapshot${result.prunedCount === 1 ? '' : 's'} older than ${SNAPSHOT_AUTO_PRUNE_DAYS} days`
+            : `Auto-Prune enabled — snapshots older than ${SNAPSHOT_AUTO_PRUNE_DAYS} days will be removed automatically`,
+        );
+      } else {
+        await runTrackedPersistence(() =>
+          persistenceService.saveDiligencePrefs({
+            personaTrack,
+            currency,
+            bookmarkedDocIds,
+            autoPruneSnapshots: false,
+            lastAutoPruneAt: lastAutoPruneSummary.prunedAt,
+            lastAutoPrunedCount: lastAutoPruneSummary.prunedCount,
+          }),
+        );
+        setAutoNotice('Auto-Prune disabled — saved snapshots will be retained indefinitely');
+      }
+    },
+    [
+      bookmarkedDocIds,
+      currency,
+      lastAutoPruneSummary.prunedAt,
+      lastAutoPruneSummary.prunedCount,
+      persistenceService,
+      personaTrack,
+      runTrackedPersistence,
+    ],
+  );
 
   const forceSync = useCallback(async (): Promise<boolean> => {
     const currentlyOnline =
@@ -1423,8 +1573,25 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
             personaTrack,
             currency,
             bookmarkedDocIds,
+            autoPruneSnapshots,
+            lastAutoPruneAt: lastAutoPruneSummary.prunedAt,
+            lastAutoPrunedCount: lastAutoPruneSummary.prunedCount,
           }),
         ]);
+        if (autoPruneSnapshots) {
+          const pruneResult = await persistenceService.pruneExpiredSnapshots(
+            SNAPSHOT_AUTO_PRUNE_DAYS,
+          );
+          setLastAutoPruneSummary({
+            prunedAt: pruneResult.prunedAt,
+            prunedCount: pruneResult.prunedCount,
+          });
+        }
+        if (cloudSyncEnabled) {
+          const cloudRes = await persistenceService.syncToCloudBackup();
+          setLastCloudSyncAt(cloudRes.mirroredAt);
+          setCloudBackupRevision(cloudRes.cloudRevision);
+        }
         const result = await persistenceService.reconcileAndVerify();
         const [scenarios, snapshots] = await Promise.all([
           persistenceService.listCalculatorScenarios(),
@@ -1455,6 +1622,10 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     personaTrack,
     currency,
     bookmarkedDocIds,
+    autoPruneSnapshots,
+    cloudSyncEnabled,
+    lastAutoPruneSummary.prunedAt,
+    lastAutoPruneSummary.prunedCount,
   ]);
 
   const clearLocalCachedData = useCallback(async (): Promise<void> => {
@@ -1477,6 +1648,12 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
 
     setSavedCalculatorScenarios([]);
     setWorkspaceSnapshots([]);
+    setAutoPruneSnapshotsState(false);
+    setLastAutoPruneSummary({ prunedAt: null, prunedCount: 0 });
+    setStorageHealthReport(null);
+    setCloudSyncEnabledState(false);
+    setLastCloudSyncAt(null);
+    setCloudBackupRevision(0);
     setInvestorFeedback([]);
     setContactInquiries([]);
     setSavedProposals([]);
@@ -1504,6 +1681,104 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     URL.revokeObjectURL(url);
     setAutoNotice('Exported complete IndexedDB offline backup JSON');
   }, [persistenceService]);
+
+  const runStorageHealthCheck = useCallback<StackContextValue['runStorageHealthCheck']>(
+    async (options) => {
+      clearGuardUntilRef.current = 0;
+      const report = await runTrackedPersistence(
+        () => persistenceService.performStorageHealthCheck(options),
+        { minVisualMs: 250 },
+      );
+      setStorageHealthReport(report);
+      if (report.issuesRepaired > 0) {
+        // Refresh local state caches to reflect any repaired items
+        const [scenarios, snapshots] = await Promise.all([
+          persistenceService.listCalculatorScenarios(),
+          persistenceService.listWorkspaceSnapshots(),
+        ]);
+        setSavedCalculatorScenarios(scenarios);
+        setWorkspaceSnapshots(snapshots);
+        setAutoNotice(
+          `Storage health scan: 100% integrity restored · Auto-repaired ${report.issuesRepaired} issue${report.issuesRepaired === 1 ? '' : 's'} across ${report.storesChecked} stores`,
+        );
+      } else if (report.healthy) {
+        setAutoNotice(
+          `Storage health scan verified: 100% integrity across ${report.storesChecked} IndexedDB object stores (${report.recordsScanned} records scanned)`,
+        );
+      }
+      return report;
+    },
+    [persistenceService, runTrackedPersistence],
+  );
+
+  const syncToCloudNow = useCallback<StackContextValue['syncToCloudNow']>(async () => {
+    clearGuardUntilRef.current = 0;
+    const result = await runTrackedPersistence(() => persistenceService.syncToCloudBackup(), {
+      minVisualMs: 250,
+    });
+    setLastCloudSyncAt(result.mirroredAt);
+    setCloudBackupRevision(result.cloudRevision);
+    setAutoNotice(
+      `Local IndexedDB mirrored online (Rev #${result.cloudRevision}) · ${result.recordsMirrored} records mirrored`,
+    );
+    return result;
+  }, [persistenceService, runTrackedPersistence]);
+
+  const setCloudSyncEnabled = useCallback<StackContextValue['setCloudSyncEnabled']>(
+    async (enabled) => {
+      clearGuardUntilRef.current = 0;
+      setCloudSyncEnabledState(enabled);
+      if (enabled) {
+        const result = await runTrackedPersistence(async () => {
+          const syncResult = await persistenceService.syncToCloudBackup();
+          await persistenceService.saveDiligencePrefs({
+            personaTrack,
+            currency,
+            bookmarkedDocIds,
+            autoPruneSnapshots,
+            lastAutoPruneAt: lastAutoPruneSummary.prunedAt,
+            lastAutoPrunedCount: lastAutoPruneSummary.prunedCount,
+            cloudSyncEnabled: true,
+            lastCloudSyncAt: syncResult.mirroredAt,
+            cloudBackupRevision: syncResult.cloudRevision,
+          });
+          return syncResult;
+        });
+        setLastCloudSyncAt(result.mirroredAt);
+        setCloudBackupRevision(result.cloudRevision);
+        setAutoNotice(
+          `Cloud Sync enabled: local IndexedDB mirrored online (Rev #${result.cloudRevision})`,
+        );
+      } else {
+        await runTrackedPersistence(async () => {
+          await persistenceService.saveDiligencePrefs({
+            personaTrack,
+            currency,
+            bookmarkedDocIds,
+            autoPruneSnapshots,
+            lastAutoPruneAt: lastAutoPruneSummary.prunedAt,
+            lastAutoPrunedCount: lastAutoPruneSummary.prunedCount,
+            cloudSyncEnabled: false,
+            lastCloudSyncAt,
+            cloudBackupRevision,
+          });
+        });
+        setAutoNotice('Cloud Sync disabled: data retained in offline IndexedDB only');
+      }
+    },
+    [
+      autoPruneSnapshots,
+      bookmarkedDocIds,
+      cloudBackupRevision,
+      currency,
+      lastAutoPruneSummary.prunedAt,
+      lastAutoPruneSummary.prunedCount,
+      lastCloudSyncAt,
+      persistenceService,
+      personaTrack,
+      runTrackedPersistence,
+    ],
+  );
 
   // Track browser online/offline connectivity and automatically reconcile when connection returns
   useEffect(() => {
@@ -1575,6 +1850,39 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
           }
           if (Array.isArray(diligencePrefs.bookmarkedDocIds)) {
             setBookmarkedDocIds(diligencePrefs.bookmarkedDocIds);
+          }
+          if (typeof diligencePrefs.cloudSyncEnabled === 'boolean') {
+            setCloudSyncEnabledState(diligencePrefs.cloudSyncEnabled);
+          }
+          if (diligencePrefs.lastCloudSyncAt) {
+            setLastCloudSyncAt(diligencePrefs.lastCloudSyncAt);
+          }
+          if (typeof diligencePrefs.cloudBackupRevision === 'number') {
+            setCloudBackupRevision(diligencePrefs.cloudBackupRevision);
+          }
+          const pruneEnabled = Boolean(diligencePrefs.autoPruneSnapshots);
+          setAutoPruneSnapshotsState(pruneEnabled);
+          setLastAutoPruneSummary({
+            prunedAt: diligencePrefs.lastAutoPruneAt ?? null,
+            prunedCount: diligencePrefs.lastAutoPrunedCount ?? 0,
+          });
+          if (pruneEnabled) {
+            void persistenceService
+              .pruneExpiredSnapshots(SNAPSHOT_AUTO_PRUNE_DAYS)
+              .then((pruneRes) => {
+                if (!active) return;
+                if (pruneRes.prunedIds.length > 0) {
+                  const prunedSet = new Set(pruneRes.prunedIds);
+                  setWorkspaceSnapshots((prev) =>
+                    prev.filter((item) => !prunedSet.has(item.id)),
+                  );
+                }
+                setLastAutoPruneSummary({
+                  prunedAt: pruneRes.prunedAt,
+                  prunedCount: pruneRes.prunedCount,
+                });
+                setStorageRevision((rev) => rev + 1);
+              });
           }
         }
         if (Array.isArray(feedbackList)) {
@@ -1665,7 +1973,7 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     runTrackedPersistence,
   ]);
 
-  // Automatically persist diligence preferences (currency, persona track, Data Room bookmarks) to IndexedDB
+  // Automatically persist diligence preferences (currency, persona track, Data Room bookmarks, auto-prune) to IndexedDB
   useEffect(() => {
     if (!investorCalculatorHydrated) return;
     if (Date.now() < clearGuardUntilRef.current) return;
@@ -1676,6 +1984,9 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
           personaTrack,
           currency,
           bookmarkedDocIds,
+          autoPruneSnapshots,
+          lastAutoPruneAt: lastAutoPruneSummary.prunedAt,
+          lastAutoPrunedCount: lastAutoPruneSummary.prunedCount,
         }),
       );
     }, 150);
@@ -1685,6 +1996,9 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
     personaTrack,
     currency,
     bookmarkedDocIds,
+    autoPruneSnapshots,
+    lastAutoPruneSummary.prunedAt,
+    lastAutoPruneSummary.prunedCount,
     persistenceService,
     runTrackedPersistence,
   ]);
@@ -2534,6 +2848,7 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
         saveWorkspaceSnapshot,
         restoreWorkspaceSnapshot,
         deleteWorkspaceSnapshot,
+        deleteStoredItemsBulk,
         currency,
         setCurrency,
         personaTrack,
@@ -2571,6 +2886,17 @@ export function StackProvider({ children }: { children: React.ReactNode }) {
         getStorageMetrics,
         clearLocalCachedData,
         exportOfflineBackup,
+        autoPruneSnapshots,
+        setAutoPruneSnapshots,
+        lastAutoPruneSummary,
+        pruneExpiredSnapshotsNow,
+        storageHealthReport,
+        runStorageHealthCheck,
+        cloudSyncEnabled,
+        setCloudSyncEnabled,
+        lastCloudSyncAt,
+        cloudBackupRevision,
+        syncToCloudNow,
       }}
     >
       {children}

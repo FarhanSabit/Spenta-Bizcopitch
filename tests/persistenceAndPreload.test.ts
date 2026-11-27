@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPreloadRegistry } from '../src/utils/viewPreloaders.ts';
 import { LocalPersistenceService } from '../src/utils/LocalPersistenceService.ts';
+import { buildStoredItemsCsv } from '../src/utils/storageCsvExport.ts';
 
 describe('createPreloadRegistry (once-only speculative preloading)', () => {
   it('invokes the dynamic loader strictly once across repeated hover/focus triggers', async () => {
@@ -282,5 +283,383 @@ describe('LocalPersistenceService (offline-first storage v3)', () => {
 
     unsubscribe();
     await svc.clearAll();
+  });
+
+  it('prunes workspace snapshots older than 30 days while preserving recent and auto-saved snapshots', async () => {
+    const svc = new LocalPersistenceService('spenta_prune_test_db', 3);
+    const calcState = {
+      scenario: 'conservative' as const,
+      growthMode: 'conservative' as const,
+      fxRate: 122.61,
+      taxRate: 22,
+      exitMultiple: 10,
+      dilutionPct: 10,
+      investmentK: 100,
+      horizonYears: 5,
+      compareGrowthScenarios: false,
+      projectedChartMetric: 'value' as const,
+      subTab: 'roi' as const,
+      mixPreset: 'fy27' as const,
+      mixScopeWeights: { one_time_builds: 50, recurring_saas: 30 },
+      mixOpexRatioPct: 28,
+    };
+
+    const nowMs = Date.parse('2026-11-27T12:00:00.000Z');
+    const thirtyFiveDaysAgo = new Date(nowMs - 35 * 24 * 60 * 60 * 1000).toISOString();
+    const fiveDaysAgo = new Date(nowMs - 5 * 24 * 60 * 60 * 1000).toISOString();
+
+    const oldSnap = await svc.saveWorkspaceSnapshot({
+      name: 'Expired 35d Snapshot',
+      activeTab: 'App Vault',
+      selectedIds: ['icr_ops'],
+      deploymentTarget: 'on-prem',
+      hitlConfidence: 0.9,
+      calculatorState: calcState,
+      createdAt: thirtyFiveDaysAgo,
+      updatedAt: thirtyFiveDaysAgo,
+    });
+
+    const recentSnap = await svc.saveWorkspaceSnapshot({
+      name: 'Recent 5d Snapshot',
+      activeTab: 'Financials',
+      selectedIds: ['icr_ops', 'genai_bi'],
+      deploymentTarget: 'cloud',
+      hitlConfidence: 0.92,
+      calculatorState: calcState,
+      createdAt: fiveDaysAgo,
+      updatedAt: fiveDaysAgo,
+    });
+
+    await svc.saveWorkspaceSnapshot({
+      id: 'latest_workspace_snapshot',
+      name: 'Auto-Saved Workspace',
+      activeTab: 'App Vault',
+      selectedIds: ['icr_ops'],
+      deploymentTarget: 'on-prem',
+      hitlConfidence: 0.91,
+      calculatorState: calcState,
+      createdAt: thirtyFiveDaysAgo,
+      updatedAt: thirtyFiveDaysAgo,
+    });
+
+    const result = await svc.pruneExpiredSnapshots(30, nowMs);
+    assert.equal(result.prunedCount, 1);
+    assert.deepEqual(result.prunedIds, [oldSnap.id]);
+    assert.equal(result.remainingCount, 1);
+
+    const remaining = await svc.listWorkspaceSnapshots();
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0].id, recentSnap.id);
+
+    const autoSaved = await svc.getWorkspaceSnapshot('latest_workspace_snapshot');
+    assert.ok(autoSaved, 'Active auto-saved workspace checkpoint must not be pruned');
+
+    await svc.clearAll();
+  });
+
+  it('computes 30-day storage usage trend and formats structured CSV exports for accounting tools', async () => {
+    const svc = new LocalPersistenceService('spenta_trend_csv_test_db', 3);
+    const baseCalc = {
+      scenario: 'upside' as const,
+      growthMode: 'aggressive' as const,
+      fxRate: 122.61,
+      taxRate: 25,
+      exitMultiple: 12,
+      dilutionPct: 5,
+      investmentK: 500,
+      horizonYears: 5,
+      compareGrowthScenarios: true,
+      projectedChartMetric: 'moic' as const,
+      subTab: 'pnl' as const,
+      mixPreset: 'fy31' as const,
+      mixScopeWeights: { one_time_builds: 24, recurring_saas: 44 },
+      mixOpexRatioPct: 24,
+    };
+
+    const nowMs = Date.parse('2026-11-27T12:00:00.000Z');
+    const twentyDaysAgo = new Date(nowMs - 20 * 24 * 60 * 60 * 1000).toISOString();
+    const fiveDaysAgo = new Date(nowMs - 5 * 24 * 60 * 60 * 1000).toISOString();
+
+    const snap20d = await svc.saveWorkspaceSnapshot({
+      name: 'Alpha "Q4", Baseline',
+      activeTab: 'App Vault',
+      selectedIds: ['icr_ops', 'genai_bi'],
+      deploymentTarget: 'on-prem',
+      hitlConfidence: 0.91,
+      calculatorState: baseCalc,
+      createdAt: twentyDaysAgo,
+      updatedAt: twentyDaysAgo,
+    });
+
+    const scen5d = await svc.saveScenario({
+      name: 'Board Upside, 500K',
+      description: 'Conservative exit check',
+      state: baseCalc,
+      createdAt: fiveDaysAgo,
+    });
+
+    const trend = await svc.getStorageUsageTrend(30, nowMs);
+    assert.equal(trend.points.length, 30);
+    assert.equal(trend.startBytes, 0);
+    assert.ok(trend.currentBytes > 0);
+    assert.equal(trend.deltaBytes, trend.currentBytes);
+    assert.equal(trend.direction, 'up');
+    assert.ok(trend.points[10].bytes > 0, 'Day -20 snapshot should contribute to day +10 footprint');
+    assert.ok(trend.points[25].bytes > trend.points[10].bytes, 'Day -5 scenario should increase footprint');
+
+    const csv = buildStoredItemsCsv([
+      {
+        kind: 'scenario',
+        id: scen5d.id,
+        name: scen5d.name,
+        typeLabel: 'Scenario',
+        details: 'upside · $500K · 12x exit',
+        estimatedBytes: 420,
+        createdAt: scen5d.createdAt,
+        updatedAt: scen5d.updatedAt,
+        scenarioRecord: scen5d,
+      },
+      {
+        kind: 'snapshot',
+        id: snap20d.id,
+        name: snap20d.name,
+        typeLabel: 'Snapshot',
+        details: 'App Vault · 2 modules · on-prem',
+        estimatedBytes: 640,
+        createdAt: snap20d.createdAt,
+        updatedAt: snap20d.updatedAt,
+        snapshotRecord: snap20d,
+      },
+    ]);
+
+    const lines = csv.split('\r\n');
+    assert.equal(lines.length, 3);
+    assert.ok(lines[0].startsWith('Record_ID,Item_Name,Item_Type,Scenario_Model'));
+    assert.ok(lines[1].includes('"Board Upside, 500K",Scenario,upside,aggressive,500,5,12,5,25,122.61'));
+    assert.ok(lines[2].includes('"Alpha ""Q4"", Baseline",Snapshot'));
+
+    await svc.clearAll();
+    const resetTrend = await svc.getStorageUsageTrend(30, nowMs);
+    assert.equal(resetTrend.currentBytes, 0);
+    assert.equal(resetTrend.direction, 'flat');
+  });
+
+  it('performs deep storage health check, identifies orphaned/fragmented entries, and restores 100% integrity with auto-repair', async () => {
+    const svc = new LocalPersistenceService('spenta_health_check_test_db', 3);
+    const nowMs = Date.parse('2026-11-27T12:00:00.000Z');
+
+    // 1. Seed healthy initial records
+    await svc.saveCalculatorState({
+      scenario: 'conservative',
+      growthMode: 'conservative',
+      fxRate: 122.61,
+      taxRate: 25,
+      exitMultiple: 10,
+      dilutionPct: 0,
+      investmentK: 500,
+      horizonYears: 5,
+      compareGrowthScenarios: false,
+      projectedChartMetric: 'value',
+      subTab: 'pnl',
+      mixPreset: 'fy31',
+      mixScopeWeights: {
+        one_time_builds: 24,
+        recurring_saas: 44,
+        managed_retainers: 14,
+        ip_royalties: 12,
+        captive_ecosystem: 6,
+      },
+      mixOpexRatioPct: 24,
+    });
+
+    await svc.saveScenario({
+      name: 'Baseline Seed Scenario',
+      description: 'Clean scenario',
+      state: {
+        scenario: 'conservative',
+        growthMode: 'conservative',
+        fxRate: 122.61,
+        taxRate: 25,
+        exitMultiple: 10,
+        dilutionPct: 0,
+        investmentK: 500,
+        horizonYears: 5,
+        compareGrowthScenarios: false,
+        projectedChartMetric: 'value',
+        subTab: 'pnl',
+        mixPreset: 'fy31',
+        mixScopeWeights: { one_time_builds: 50, recurring_saas: 50 },
+        mixOpexRatioPct: 24,
+      },
+    });
+
+    // Initial scan on clean records should report 100% integrity
+    const initialReport = await svc.performStorageHealthCheck({ autoRepair: true, nowMs });
+    assert.equal(initialReport.healthy, true);
+    assert.equal(initialReport.integrityScore, 100);
+    assert.equal(initialReport.issuesFound, 0);
+    assert.equal(initialReport.issuesRepaired, 0);
+    assert.equal(initialReport.storesChecked, 8);
+    assert.ok(initialReport.recordsScanned >= 2);
+
+    // 2. Inject fragmented/orphaned records:
+    // (a) Orphaned temporary chart cache entry
+    await svc.saveChartProjection('orphan_temp_calc_49', [{ x: 1 }], { temp: true });
+    // (b) Corrupted feedback with null replies array
+    await svc.saveInvestorFeedback({
+      section: 'Test Section',
+      text: 'Frag feedback',
+      priority: 'Low',
+      sentimentScore: 4,
+    });
+
+    // Run diagnostic scan with autoRepair
+    const repairReport = await svc.performStorageHealthCheck({ autoRepair: true, nowMs });
+    assert.ok(repairReport.recordsScanned >= 4);
+    assert.ok(repairReport.issuesFound >= 1);
+    assert.ok(repairReport.issuesRepaired >= 1);
+    assert.equal(repairReport.integrityScore, 100);
+    assert.equal(repairReport.healthy, true);
+
+    // Check that orphaned chart projection was purged
+    const orphanedProj = await svc.loadChartProjection('orphan_temp_calc_49');
+    assert.equal(orphanedProj, null, 'Orphaned temporary cache should have been auto-purged');
+
+    // Follow-up scan must confirm clean 100% integrity with 0 remaining issues
+    const cleanVerify = await svc.performStorageHealthCheck({ autoRepair: true, nowMs });
+    assert.equal(cleanVerify.healthy, true);
+    assert.equal(cleanVerify.integrityScore, 100);
+    assert.equal(cleanVerify.issuesFound, 0);
+
+    await svc.clearAll();
+  });
+
+  it('bridges local IndexedDB data with cloud backup mirror, computes checksums, and tracks backup revisions', async () => {
+    const svc = new LocalPersistenceService('spenta_cloud_sync_test_db', 3);
+    const nowMs = Date.parse('2026-11-27T12:00:00.000Z');
+
+    // Seed data to mirror
+    await svc.saveScenario({
+      name: 'Cloud Mirror Test Scenario',
+      state: {
+        scenario: 'upside',
+        growthMode: 'aggressive',
+        fxRate: 122.61,
+        taxRate: 20,
+        exitMultiple: 15,
+        dilutionPct: 5,
+        investmentK: 300,
+        horizonYears: 3,
+        compareGrowthScenarios: true,
+        projectedChartMetric: 'value',
+        subTab: 'pnl',
+        mixPreset: 'arr-heavy',
+        mixScopeWeights: { one_time_builds: 10, recurring_saas: 80 },
+        mixOpexRatioPct: 20,
+      },
+    });
+
+    await svc.saveWorkspaceSnapshot({
+      name: 'Cloud Snapshot 1',
+      activeTab: 'App Vault',
+      selectedIds: ['icr_ops'],
+      deploymentTarget: 'on-prem',
+      hitlConfidence: 0.95,
+      calculatorState: {
+        scenario: 'conservative',
+        growthMode: 'conservative',
+        fxRate: 122.61,
+        taxRate: 25,
+        exitMultiple: 10,
+        dilutionPct: 0,
+        investmentK: 500,
+        horizonYears: 5,
+        compareGrowthScenarios: false,
+        projectedChartMetric: 'value',
+        subTab: 'pnl',
+        mixPreset: 'fy31',
+        mixScopeWeights: { one_time_builds: 50, recurring_saas: 50 },
+        mixOpexRatioPct: 24,
+      },
+    });
+
+    // 1. Initial Cloud Sync
+    const sync1 = await svc.syncToCloudBackup(nowMs);
+    assert.equal(sync1.success, true);
+    assert.ok(sync1.recordsMirrored >= 2);
+    assert.equal(sync1.cloudRevision, 1);
+    assert.ok(sync1.checksum.startsWith('chk-'));
+    assert.ok(sync1.bundleSizeBytes > 0);
+
+    const status1 = svc.getCloudSyncStatus();
+    assert.equal(status1.enabled, true);
+    assert.equal(status1.isMirrored, true);
+    assert.equal(status1.cloudRevision, 1);
+    assert.equal(status1.lastMirroredAt, new Date(nowMs).toISOString());
+
+    // 2. Incremental Cloud Sync updates revision to 2
+    const sync2 = await svc.syncToCloudBackup(nowMs + 60000);
+    assert.equal(sync2.success, true);
+    assert.equal(sync2.cloudRevision, 2);
+
+    const status2 = svc.getCloudSyncStatus();
+    assert.equal(status2.cloudRevision, 2);
+
+    // Verify diligence preferences recorded cloud sync state
+    const prefs = await svc.loadDiligencePrefs();
+    assert.equal(prefs?.cloudSyncEnabled, true);
+    assert.equal(prefs?.cloudBackupRevision, 2);
+
+    await svc.clearAll();
+  });
+
+  it('validates StorageManager sort dropdown options (Date Created Newest/Oldest, Size Desc, Name A-Z) and quota warning thresholds', () => {
+    type TestItem = {
+      name: string;
+      createdAt: string;
+      estimatedBytes: number;
+      timestampMs: number;
+    };
+
+    const items: TestItem[] = [
+      { name: 'Beta Scenario', createdAt: '2026-11-20T10:00:00Z', estimatedBytes: 500, timestampMs: 100 },
+      { name: 'Alpha Scenario', createdAt: '2026-11-25T10:00:00Z', estimatedBytes: 200, timestampMs: 200 },
+      { name: 'Gamma Snapshot', createdAt: '2026-11-15T10:00:00Z', estimatedBytes: 800, timestampMs: 50 },
+    ];
+
+    // Sort: Date Created (Newest)
+    const sortedNewest = [...items].sort((a, b) => {
+      const aCreated = Date.parse(a.createdAt) || a.timestampMs;
+      const bCreated = Date.parse(b.createdAt) || b.timestampMs;
+      return bCreated - aCreated || a.name.localeCompare(b.name);
+    });
+    assert.deepEqual(sortedNewest.map((i) => i.name), ['Alpha Scenario', 'Beta Scenario', 'Gamma Snapshot']);
+
+    // Sort: Date Created (Oldest)
+    const sortedOldest = [...items].sort((a, b) => {
+      const aCreated = Date.parse(a.createdAt) || a.timestampMs;
+      const bCreated = Date.parse(b.createdAt) || b.timestampMs;
+      return aCreated - bCreated || a.name.localeCompare(b.name);
+    });
+    assert.deepEqual(sortedOldest.map((i) => i.name), ['Gamma Snapshot', 'Beta Scenario', 'Alpha Scenario']);
+
+    // Sort: Size (Descending)
+    const sortedSize = [...items].sort((a, b) => b.estimatedBytes - a.estimatedBytes || a.name.localeCompare(b.name));
+    assert.deepEqual(sortedSize.map((i) => i.name), ['Gamma Snapshot', 'Beta Scenario', 'Alpha Scenario']);
+
+    // Sort: Name (A-Z)
+    const sortedName = [...items].sort((a, b) => a.name.localeCompare(b.name));
+    assert.deepEqual(sortedName.map((i) => i.name), ['Alpha Scenario', 'Beta Scenario', 'Gamma Snapshot']);
+
+    // Quota warning threshold evaluation (≥80%)
+    const quotaBytes = 50 * 1024 * 1024; // 50 MB
+    const underThresholdUsage = 35 * 1024 * 1024; // 70%
+    const overThresholdUsage = 41 * 1024 * 1024; // 82%
+
+    const pctUnder = (underThresholdUsage / quotaBytes) * 100;
+    const pctOver = (overThresholdUsage / quotaBytes) * 100;
+
+    assert.equal(pctUnder >= 80, false, '70% usage must NOT trigger quota warning');
+    assert.equal(pctOver >= 80, true, '82% usage MUST trigger quota warning');
   });
 });
