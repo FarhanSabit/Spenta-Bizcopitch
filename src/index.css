@@ -607,6 +607,44 @@ html.dark.spenta-mobile-grid-on .bg-obsidian-grid {
   }
 }
 
+/* Permanent glowing border animation for active SectionNavigator progress nodes */
+@keyframes spenta-section-node-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px var(--spenta-node-glow-border, rgba(31, 56, 99, 0.55)),
+      0 0 8px 1px var(--spenta-node-glow-dim, rgba(31, 56, 99, 0.24));
+  }
+  50% {
+    box-shadow:
+      0 0 0 1.5px var(--spenta-node-glow-bright, rgba(28, 110, 70, 0.85)),
+      0 0 16px 3px var(--spenta-node-glow-halo, rgba(28, 110, 70, 0.36));
+  }
+}
+
+.spenta-section-node-active {
+  --spenta-node-glow-border: rgba(31, 56, 99, 0.55);
+  --spenta-node-glow-dim: rgba(31, 56, 99, 0.22);
+  --spenta-node-glow-bright: rgba(28, 110, 70, 0.85);
+  --spenta-node-glow-halo: rgba(28, 110, 70, 0.32);
+  animation: spenta-section-node-glow 2.4s ease-in-out infinite;
+}
+
+.dark .spenta-section-node-active {
+  --spenta-node-glow-border: rgba(143, 166, 232, 0.65);
+  --spenta-node-glow-dim: rgba(143, 166, 232, 0.28);
+  --spenta-node-glow-bright: rgba(111, 203, 159, 0.92);
+  --spenta-node-glow-halo: rgba(111, 203, 159, 0.38);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spenta-section-node-active {
+    animation: none;
+    box-shadow:
+      0 0 0 1.5px var(--spenta-node-glow-bright),
+      0 0 10px 1px var(--spenta-node-glow-dim);
+  }
+}
+
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }

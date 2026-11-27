@@ -3,6 +3,7 @@ import { Check, Copy, Mail, Send, Trash2, X } from 'lucide-react';
 import { SPENTA_CONTACT_EMAIL } from '../../data/spentaManifest';
 import { useStack } from '../../store/StackContext';
 import { copyTextWithFallback } from '../../utils/shareUrlCodec';
+import { SpentaLogo } from '../SpentaLogo';
 
 const CHECK_SIZE_OPTIONS = [
   '$25K – $50K (Angel)',
@@ -13,6 +14,7 @@ const CHECK_SIZE_OPTIONS = [
 
 export function FounderContactModal() {
   const {
+    theme,
     contactModalOpen,
     contactModalTopic,
     closeContactModal,
@@ -117,16 +119,20 @@ export function FounderContactModal() {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-4 border-b border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] flex items-center justify-between gap-4">
-          <div>
-            <h2
-              id="spenta-contact-modal-title"
-              className="text-base sm:text-lg font-bold text-[#16213A] dark:text-[#E7EBF5]"
-            >
-              Direct Founder &amp; Term-Sheet Inquiry
-            </h2>
-            <p className="text-xs text-[#5F6576] dark:text-[#8E96B0]">
-              Saved locally to IndexedDB for zero-server reliability · Optional email handoff to {SPENTA_CONTACT_EMAIL}
-            </p>
+          <div className="flex items-center gap-3 min-w-0">
+            <SpentaLogo size="xs" tone={theme === 'dark' ? 'dark-bg' : 'light-bg'} />
+            <span className="h-4 w-px bg-[#E4DFD6] dark:bg-[#232B4A] shrink-0" aria-hidden="true" />
+            <div className="min-w-0">
+              <h2
+                id="spenta-contact-modal-title"
+                className="text-base sm:text-lg font-bold text-[#16213A] dark:text-[#E7EBF5]"
+              >
+                Direct Founder &amp; Term-Sheet Inquiry
+              </h2>
+              <p className="text-xs text-[#5F6576] dark:text-[#8E96B0]">
+                Saved locally to IndexedDB for zero-server reliability · Optional email handoff to {SPENTA_CONTACT_EMAIL}
+              </p>
+            </div>
           </div>
           <button
             type="button"

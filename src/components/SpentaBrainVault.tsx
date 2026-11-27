@@ -42,6 +42,7 @@ import { useStack } from '../store/StackContext';
 import { usePathwayBrainSync } from '../hooks/usePathwayBrainSync';
 import { copyTextWithFallback } from '../utils/shareUrlCodec';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { SpentaLogo } from './SpentaLogo';
 import { StorageManager } from './StorageManager';
 
 const SovereignBrain3D = lazyWithRetry(() =>
@@ -245,6 +246,13 @@ export function SpentaBrainVault() {
         <div className="p-4 sm:p-6">
           <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-4">
             <div className="max-w-3xl">
+              <div className="mb-3">
+                <SpentaLogo
+                  size="md"
+                  tone={theme === 'dark' ? 'dark-bg' : 'light-bg'}
+                  showTagline
+                />
+              </div>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-mono uppercase tracking-[0.14em] text-[#1C6E46] dark:text-[#6FCB9F]">
                 <span>SPENTA COMPOSABLE APP VAULT</span>
                 <span className="text-[#D4CEC2] dark:text-[#2F3A60]">·</span>

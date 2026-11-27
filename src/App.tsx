@@ -40,19 +40,30 @@ const InvestorIntelligenceModal = lazyWithRetry(investorIntelligenceImporter);
 const SpatialArViewerModal = lazyWithRetry(spatialArImporter);
 
 function ViewLoadingFallback() {
+  const { theme } = useTheme();
   return (
     <div
       role="status"
       aria-label="Loading view"
-      className="space-y-4 animate-pulse py-2"
+      className="space-y-4 py-2"
     >
-      <div className="h-24 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="h-32 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
-        <div className="h-32 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
-        <div className="h-32 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
+      <div className="flex items-center justify-between gap-4 pb-2">
+        <SpentaLogo
+          size="md"
+          tone={theme === 'dark' ? 'dark-bg' : 'light-bg'}
+          showTagline
+        />
+        <span className="text-xs font-mono spenta-muted">Loading module…</span>
       </div>
-      <div className="h-64 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
+      <div className="space-y-4 animate-pulse">
+        <div className="h-24 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="h-32 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
+          <div className="h-32 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
+          <div className="h-32 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
+        </div>
+        <div className="h-64 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32]" />
+      </div>
     </div>
   );
 }
@@ -297,7 +308,7 @@ function PortalShell() {
       <footer className="spenta-band spenta-muted border-t mt-10 no-print">
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs">
           <div className="flex items-center gap-3 min-w-0">
-            <SpentaLogo className="h-6 sm:h-7" tone={theme === 'dark' ? 'dark-bg' : 'light-bg'} />
+            <SpentaLogo size="sm" tone={theme === 'dark' ? 'dark-bg' : 'light-bg'} />
             <span className="h-3.5 w-px bg-[#CFC8BC] dark:bg-[#232B4A] shrink-0" />
             <span className="font-mono text-[11px] spenta-muted truncate">
               Sovereign AI · ERP · Fintech · Voice · Spatial XR

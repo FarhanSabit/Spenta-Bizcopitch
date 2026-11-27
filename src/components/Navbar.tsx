@@ -96,7 +96,7 @@ export function Navbar() {
           aria-label="Spenta Sovereign OS Home — return to the App Vault module catalog"
           title="Return to App Vault home view"
         >
-          <SpentaLogo className="h-7" tone={theme === 'dark' ? 'dark-bg' : 'light-bg'} />
+          <SpentaLogo size="md" tone={theme === 'dark' ? 'dark-bg' : 'light-bg'} />
         </button>
 
         {/* Zone 2: 8 Clean Single-Line Navigation Tabs */}

@@ -13,6 +13,7 @@ import {
 import { BRIEFING_CHAPTERS, formatSsotCurrency } from '../../data/unifiedSsotData';
 import { useStack } from '../../store/StackContext';
 import type { InvestorFeedbackPriority } from '../../utils/LocalPersistenceService';
+import { SpentaLogo } from '../SpentaLogo';
 
 const PRIORITY_OPTIONS: InvestorFeedbackPriority[] = [
   'Critical Inquiry',
@@ -301,9 +302,8 @@ export function InvestorIntelligenceModal() {
         {/* Header */}
         <div className="px-5 py-4 border-b border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-lg bg-[#1C6E46]/12 dark:bg-[#6FCB9F]/15 flex items-center justify-center shrink-0">
-              <Activity className="w-4 h-4 text-[#1C6E46] dark:text-[#6FCB9F]" strokeWidth={1.75} />
-            </div>
+            <SpentaLogo size="xs" tone={theme === 'dark' ? 'dark-bg' : 'light-bg'} />
+            <span className="h-4 w-px bg-[#E4DFD6] dark:bg-[#232B4A] shrink-0" aria-hidden="true" />
             <div className="min-w-0">
               <h2
                 id="spenta-intelligence-title"

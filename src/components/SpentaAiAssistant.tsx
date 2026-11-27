@@ -315,9 +315,7 @@ export function SpentaAiAssistant() {
               }`}
             >
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-[#0F1529] border border-[#6FCB9F]/35 flex items-center justify-center shrink-0 p-1">
-                  <SpentaLogo variant="mark" className="h-5 w-5" />
-                </div>
+                <SpentaLogo variant="mark" size="sm" />
                 <div className="min-w-0">
                   <div className="font-bold text-sm truncate">Spenta AI Advisor</div>
                   <div className="text-[10px] font-mono text-[#6FCB9F] truncate">

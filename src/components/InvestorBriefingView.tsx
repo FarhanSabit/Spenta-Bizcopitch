@@ -44,6 +44,8 @@ import { CoreLayerId, useStack } from '../store/StackContext';
 import { copyTextWithFallback } from '../utils/shareUrlCodec';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { getPanelPreloadHandlers, getTabPreloadHandlers } from '../utils/viewPreloaders';
+import { SpentaLogo } from './SpentaLogo';
+import { SectionNavigator } from './briefing/SectionNavigator';
 import { VoiceNavigatorButton } from './briefing/VoiceNavigatorButton';
 
 const DualShoreGlobe = lazyWithRetry(() =>
@@ -75,16 +77,45 @@ export function InvestorBriefingView() {
   const [tierCategory, setTierCategory] = useState<'All' | 'A' | 'B' | 'C'>('All');
   const [selectedTierId, setSelectedTierId] = useState<string>(NINE_TIER_UNIT_ECONOMICS[6].id);
   const [copiedLayerCode, setCopiedLayerCode] = useState<boolean>(false);
+  const [activeChapterId, setActiveChapterId] = useState<string>(
+    BRIEFING_CHAPTERS[0]?.id ?? 'ssot-dual-engine',
+  );
 
   const fxRate = investorCalculatorState.fxRate;
   const isDark = theme === 'dark';
 
   const scrollToChapter = (chapterId: string) => {
+    setActiveChapterId(chapterId);
     const el = document.getElementById(chapterId);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible.length > 0 && visible[0].target.id) {
+          setActiveChapterId(visible[0].target.id);
+        }
+      },
+      {
+        rootMargin: '-120px 0px -55% 0px',
+        threshold: [0.1, 0.4],
+      },
+    );
+
+    BRIEFING_CHAPTERS.forEach((ch) => {
+      const el = document.getElementById(ch.id);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (pendingNavFocus?.type === 'briefing-section' && pendingNavFocus.id) {
@@ -181,6 +212,13 @@ export function InvestorBriefingView() {
       <section className="rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] p-5 sm:p-7 space-y-6">
         <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-6">
           <div className="space-y-2.5 max-w-3xl">
+            <div className="pb-1">
+              <SpentaLogo
+                size="md"
+                tone={isDark ? 'dark-bg' : 'light-bg'}
+                showTagline
+              />
+            </div>
             <div className="text-xs font-mono text-[#5F6576] dark:text-[#8E96B0]">
               Spenta Intelligent Reality &amp; Sovereign OS · Master SSOT Investor Briefing ·{' '}
               {UNIFIED_SAFE_TERMS.instrument}
@@ -350,30 +388,13 @@ export function InvestorBriefingView() {
         </div>
       </section>
 
-      {/* Sticky Editorial Chapter Jump Bar */}
-      <nav
-        aria-label="Investor Briefing chapters"
-        className="sticky top-14 z-20 -mx-1 px-2 py-2 bg-[#FAF8F4]/95 dark:bg-[#0B1020]/95 border-y border-[#E4DFD6] dark:border-[#232B4A] flex items-center gap-1.5 overflow-x-auto no-scrollbar"
-      >
-        {BRIEFING_CHAPTERS.map((ch) => {
-          const prioritized = ch.recommendedFor.includes(personaTrack);
-          return (
-            <button
-              key={ch.id}
-              type="button"
-              onClick={() => scrollToChapter(ch.id)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
-                prioritized
-                  ? 'bg-white dark:bg-[#141A32] border border-[#1F3863]/35 dark:border-[#8FA6E8]/40 text-[#16213A] dark:text-[#E7EBF5]'
-                  : 'text-[#5F6576] dark:text-[#8E96B0] hover:text-[#16213A] dark:hover:text-[#E7EBF5]'
-              }`}
-            >
-              <span className="font-mono text-[11px] mr-1 opacity-70">{ch.num}</span>
-              {ch.shortTitle}
-            </button>
-          );
-        })}
-      </nav>
+      {/* Sticky Editorial Section Navigator */}
+      <SectionNavigator
+        chapters={BRIEFING_CHAPTERS}
+        activeChapterId={activeChapterId}
+        personaTrack={personaTrack}
+        onSelectChapter={scrollToChapter}
+      />
 
       {/* 01. Dual-Engine Commercialization & Value Exchange */}
       <section id="ssot-dual-engine" className="scroll-mt-28 space-y-5">

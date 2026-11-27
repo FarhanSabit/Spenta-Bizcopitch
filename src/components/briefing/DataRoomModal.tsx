@@ -18,11 +18,13 @@ import {
 } from '../../data/unifiedSsotData';
 import { useStack } from '../../store/StackContext';
 import { copyTextWithFallback } from '../../utils/shareUrlCodec';
+import { SpentaLogo } from '../SpentaLogo';
 
 type CategoryFilter = 'All' | DataRoomDocument['category'] | 'Bookmarked';
 
 export function DataRoomModal() {
   const {
+    theme,
     dataRoomOpen,
     setDataRoomOpen,
     bookmarkedDocIds,
@@ -113,9 +115,8 @@ export function DataRoomModal() {
         {/* Header */}
         <div className="px-5 py-4 border-b border-[#E4DFD6] dark:border-[#232B4A] bg-white dark:bg-[#141A32] flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-lg bg-[#1F3863]/10 dark:bg-[#8FA6E8]/15 flex items-center justify-center shrink-0">
-              <FolderLock className="w-4 h-4 text-[#1F3863] dark:text-[#8FA6E8]" strokeWidth={1.75} />
-            </div>
+            <SpentaLogo size="xs" tone={theme === 'dark' ? 'dark-bg' : 'light-bg'} />
+            <span className="h-4 w-px bg-[#E4DFD6] dark:bg-[#232B4A] shrink-0" aria-hidden="true" />
             <div className="min-w-0">
               <h2
                 id="spenta-dataroom-title"
