@@ -7,7 +7,11 @@
     "dev": "tsx server.ts",
     "build": "vite build",
     "start": "node server.ts",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist .vite node_modules/.vite"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.3.0",
@@ -25,6 +29,7 @@
     "lucide-react": "^0.511.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-is": "^19.1.0",
     "recharts": "^3.11.0",
     "tailwind-merge": "^3.7.1",
     "three": "^0.187.0"
@@ -40,5 +45,23 @@
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "vite": "^6.3.5"
+  },
+  "overrides": {
+    "react": "$react",
+    "react-dom": "$react-dom",
+    "react-is": "$react-is",
+    "@types/react": "$@types/react",
+    "@types/react-dom": "$@types/react-dom",
+    "vite": "$vite",
+    "tailwindcss": "$tailwindcss"
+  },
+  "resolutions": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-is": "^19.1.0",
+    "@types/react": "^19.1.4",
+    "@types/react-dom": "^19.1.5",
+    "vite": "^6.3.5",
+    "tailwindcss": "^4.1.7"
   }
 }

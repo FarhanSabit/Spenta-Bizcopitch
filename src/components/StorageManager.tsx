@@ -182,7 +182,10 @@ export function StorageManager() {
     syncToCloudNow,
     activeTab,
     selectedIds,
+    setAutoNotice,
   } = useStack();
+
+
 
   const [metrics, setMetrics] = useState<PersistenceStorageMetrics | null>(null);
   const [usageTrend, setUsageTrend] = useState<StorageUsageTrendSummary | null>(null);
@@ -563,6 +566,42 @@ export function StorageManager() {
   const clearSelection = useCallback(() => {
     setSelectedItemKeys(new Set());
   }, []);
+
+  const handleArchiveSelected = useCallback(() => {
+    if (selectedItemKeys.size === 0) return;
+    const itemByKey = new Map(storedItemsList.map((item) => [item.key, item]));
+    const selectedRecords: any[] = [];
+    selectedItemKeys.forEach((key) => {
+      const match = itemByKey.get(key);
+      if (match) {
+        if (match.kind === 'scenario' && match.scenarioRecord) {
+          selectedRecords.push(match.scenarioRecord);
+        } else if (match.kind === 'snapshot' && match.snapshotRecord) {
+          selectedRecords.push(match.snapshotRecord);
+        }
+      }
+    });
+    if (selectedRecords.length === 0) return;
+
+    const archivePayload = {
+      version: 1,
+      app: 'Spenta Sovereign Storage Archive',
+      exportedAt: new Date().toISOString(),
+      count: selectedRecords.length,
+      items: selectedRecords,
+    };
+    const jsonStr = JSON.stringify(archivePayload, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `spenta_selected_archive_${dateStamp}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [selectedItemKeys, storedItemsList]);
 
   const handleBulkDeleteSelected = useCallback(async () => {
     if (bulkDeleting || selectedItemKeys.size === 0) return;
@@ -1199,6 +1238,66 @@ export function StorageManager() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Summary Card: Total Database Capacity Used */}
+        <div
+          data-testid="total-database-capacity-card"
+          className="mt-5 p-5 rounded-2xl border border-[#E4DFD6] dark:border-[#232B4A] bg-[#FAF8F4] dark:bg-[#0F1529] space-y-3"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#1F3863] text-white dark:bg-[#8FA6E8] dark:text-[#0B1020] flex items-center justify-center shrink-0">
+                <HardDrive className="w-5 h-5" strokeWidth={1.75} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#16213A] dark:text-[#E7EBF5]">
+                  Total Database Capacity Used
+                </h3>
+                <p className="text-xs text-[#5F6576] dark:text-[#8E96B0] mt-0.5">
+                  IndexedDB storage utilization across all {metrics?.storeStats.length ?? 8} object stores in <span className="font-mono">{metrics?.dbName ?? 'spenta_sovereign_offline_db'}</span>.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="text-right">
+                <div
+                  data-testid="capacity-used-megabytes"
+                  className="text-xl font-bold font-mono tabular-nums text-[#16213A] dark:text-[#E7EBF5]"
+                >
+                  {loading && !metrics ? '…' : formatMegabytes(effectiveStorageBytes)}
+                </div>
+                <div className="text-[11px] font-mono tabular-nums text-[#5F6576] dark:text-[#8E96B0]">
+                  {formatBytes(effectiveStorageBytes)} of {formatBytes(effectiveQuotaBytes)} quota
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Dynamic Progress Bar */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs font-mono tabular-nums">
+              <span className={displayQuotaPct >= 80 ? 'text-[#B45309] dark:text-[#FCD34D] font-bold' : 'text-[#5F6576] dark:text-[#8E96B0]'}>
+                {displayQuotaPct.toFixed(1)}% Capacity Used
+              </span>
+              <span className="text-[#5F6576] dark:text-[#8E96B0]">
+                {displayQuotaPct >= 80 ? '⚠️ Exceeds 80% Threshold' : 'Nominal Utilization'}
+              </span>
+            </div>
+            <div className="h-3 w-full rounded-full bg-[#E4DFD6] dark:bg-[#232B4A] overflow-hidden p-0.5 border border-[#D5E1F5]/50 dark:border-[#1E2E54]/50">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  displayQuotaPct >= 80
+                    ? 'bg-gradient-to-r from-[#D97706] to-[#DC2626] dark:from-[#F59E0B] dark:to-[#EF4444]'
+                    : 'bg-gradient-to-r from-[#1F3863] to-[#2563EB] dark:from-[#8FA6E8] dark:to-[#60A5FA]'
+                }`}
+                style={{
+                  width: `${Math.min(100, Math.max(displayQuotaPct > 0 ? 3 : 0, displayQuotaPct))}%`,
+                }}
+              />
+            </div>
+          </div>
         </div>
 
         {/* 4-Column KPI Summary Strip (Tabular Numerals) */}
@@ -2204,6 +2303,18 @@ export function StorageManager() {
               <span className="text-xs font-mono tabular-nums text-[#5F6576] dark:text-[#8E96B0]">
                 {filteredStoredItems.length} of {storedItemsList.length} shown
               </span>
+            )}
+
+            {selectedItemKeys.size > 0 && (
+              <button
+                type="button"
+                data-testid="batch-archive-btn"
+                onClick={handleArchiveSelected}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#1F3863] dark:border-[#8FA6E8] bg-white dark:bg-[#0B1020] text-[#1F3863] dark:text-[#8FA6E8] hover:bg-[#FAF8F4] dark:hover:bg-[#141A32] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
+                <span>Archive Selected ({selectedItemKeys.size})</span>
+              </button>
             )}
 
             <button

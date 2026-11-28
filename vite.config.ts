@@ -9,13 +9,19 @@ function disableHmrWebSocketPlugin(): Plugin {
     apply: 'serve',
     enforce: 'post',
     configResolved(resolved) {
-      hmrDisabled = resolved.server.hmr === false || resolved.server.ws === false;
+      hmrDisabled =
+        resolved.command === 'serve' &&
+        (resolved.server?.hmr === false || resolved.server?.ws === false);
     },
     transform(code, id) {
-      if (hmrDisabled && id.replace(/\\/g, '/').includes('/vite/dist/client/client.mjs')) {
+      if (!hmrDisabled || typeof code !== 'string' || typeof id !== 'string') {
+        return undefined;
+      }
+      const normalizedId = id.replace(/\\/g, '/');
+      if (normalizedId.includes('/vite/dist/client/client.mjs')) {
         return {
           code: code.replace(
-            'transport.connect(createHMRHandler(handleMessage));',
+            /transport\.connect\(createHMRHandler\(handleMessage\)\);?/g,
             '/* HMR disabled: WebSocket connect suppressed */',
           ),
           map: null,
@@ -29,6 +35,9 @@ function disableHmrWebSocketPlugin(): Plugin {
 export default defineConfig({
   base: '/',
   plugins: [react(), tailwindcss(), disableHmrWebSocketPlugin()],
+  resolve: {
+    dedupe: ['react', 'react-dom', 'react-is', 'three'],
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
@@ -106,9 +115,14 @@ export default defineConfig({
             return 'vendor-gsap';
           }
 
-          // Icons
-          if (normalized.includes('/lucide-react/')) {
-            return 'vendor-icons';
+          // Shared Utilities, IndexedDB Storage & Icons
+          if (
+            normalized.includes('/idb/') ||
+            normalized.includes('/lucide-react/') ||
+            normalized.includes('/clsx/') ||
+            normalized.includes('/tailwind-merge/')
+          ) {
+            return 'vendor-utils';
           }
 
           // React Core Framework

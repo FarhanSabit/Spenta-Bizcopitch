@@ -14,13 +14,34 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = Number(process.env.PORT) || 3000;
+function resolvePort(): number {
+  const args = process.argv.slice(2);
+  const portFlagIndex = args.findIndex((arg) => arg === '--port' || arg === '-p');
+  if (portFlagIndex !== -1 && args[portFlagIndex + 1]) {
+    const cliPort = Number(args[portFlagIndex + 1]);
+    if (Number.isFinite(cliPort) && cliPort > 0) return cliPort;
+  }
+
+  const npmConfigPort = Number(process.env.npm_config_port);
+  if (Number.isFinite(npmConfigPort) && npmConfigPort > 0) {
+    return npmConfigPort;
+  }
+
+  const envPort = Number(process.env.PORT);
+  const nginxPort = Number(process.env.NGINX_PORT);
+  const defaultAppPort = Number(process.env.DEFAULT_APP_PORT) || 3000;
+
+  // In containerized dev environments where NGINX_PORT occupies PORT (e.g., 8080), bind to DEFAULT_APP_PORT (3000)
+  if (Number.isFinite(envPort) && envPort > 0 && envPort !== nginxPort) {
+    return envPort;
+  }
+
+  return defaultAppPort;
+}
+
+const PORT = resolvePort();
 const HOST = '0.0.0.0';
-const isDev = process.env.NODE_ENV === 'development';
-const isProd =
-  !isDev &&
-  (process.env.NODE_ENV === 'production' ||
-    Boolean(process.env.K_SERVICE || process.env.CLOUD_RUN_JOB));
+const isProd = process.env.NODE_ENV === 'production';
 
 async function startServer() {
   const app = express();
